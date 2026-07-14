@@ -11,6 +11,7 @@ for the full design rationale.
 
 import json
 import os
+import re
 
 import httpx
 from dotenv import load_dotenv
@@ -140,6 +141,100 @@ def get_climate_context(query: str) -> str:
     than normal this week?", "Has Denver been drier than normal this year?",
     "How cold was last winter in Billings?".
     """
+    try:
+        data = _post_context({"query": query})
+    except RuntimeError as error:
+        return str(error)
+
+    if data.get("status") == "clarification_needed":
+        return _format_clarification(data)
+
+    return _format_context_result(data)
+
+
+@mcp.tool()
+def get_context_for_coordinates(latitude: float, longitude: float, label: str = "") -> str:
+    """Get 10-day forecast and 35-year historical climate context for exact
+    coordinates. Use when you have a specific latitude/longitude (a
+    property, field, trailhead, or site) rather than a place name — this
+    skips geocoding entirely. Land locations only.
+    """
+    location_explicit = {"lat": latitude, "lon": longitude}
+    if label:
+        location_explicit["label"] = label
+
+    try:
+        data = _post_context({"location_explicit": location_explicit})
+    except RuntimeError as error:
+        return str(error)
+
+    if data.get("status") == "clarification_needed":
+        return _format_clarification(data)
+
+    return _format_context_result(data)
+
+
+_COORD_RE = re.compile(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$")
+
+
+def _parse_coords(text: str):
+    match = _COORD_RE.match(text)
+    if not match:
+        return None
+    lat, lon = float(match.group(1)), float(match.group(2))
+    if -90 <= lat <= 90 and -180 <= lon <= 180:
+        return lat, lon
+    return None
+
+
+@mcp.tool()
+def get_water_year_status(location: str) -> str:
+    """Get water year precipitation and temperature status for a location:
+    totals since the start of the water/calendar year (Oct 1 for North
+    America, Jan 1 elsewhere), percentile rank against the same period
+    across 35 historical years, and whether conditions are notably wet,
+    dry, warm, or cold. Built for drought monitoring, water resource,
+    agricultural, and fire-planning contexts. location can be a place name
+    ("Casper WY") or "lat,lon" coordinates.
+    """
+    coords = _parse_coords(location)
+    if coords:
+        lat, lon = coords
+        payload = {
+            "location_explicit": {"lat": lat, "lon": lon, "label": location},
+            "query": "Has this location been dry this water year?",
+        }
+    else:
+        payload = {"query": f"Has {location} been dry this water year?"}
+
+    try:
+        data = _post_context(payload)
+    except RuntimeError as error:
+        return str(error)
+
+    if data.get("status") == "clarification_needed":
+        return _format_clarification(data)
+
+    return _format_context_result(data)
+
+
+@mcp.tool()
+def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
+    """Compare current or forecast conditions at a location to 35-year
+    historical normals. Returns percentile rankings, not vague comparisons.
+    Use for questions like "is this week unusually warm" or "will it be
+    wetter than normal this month". variable must be "temperature" or
+    "precipitation". time_window is optional free text (e.g. "this week",
+    "this month") — defaults to "this week".
+    """
+    variable = variable.strip().lower()
+    if variable not in ("temperature", "precipitation"):
+        return f'variable must be "temperature" or "precipitation" (got {variable!r}).'
+
+    adjective = "warmer" if variable == "temperature" else "wetter"
+    window = time_window.strip() or "this week"
+    query = f"Will {location} be {adjective} than normal {window}?"
+
     try:
         data = _post_context({"query": query})
     except RuntimeError as error:
