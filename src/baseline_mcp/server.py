@@ -22,6 +22,10 @@ load_dotenv()
 BASELINE_API_URL = os.environ.get("BASELINE_API_URL", "http://127.0.0.1:5050").rstrip("/")
 BASELINE_API_KEY = os.environ.get("BASELINE_API_KEY", "")
 
+# Documented cold start is 8-12s on the production Droplet (local tile cache).
+# 60s gives real margin above that without leaving a genuinely-hung API pending forever.
+REQUEST_TIMEOUT_SECONDS = 60.0
+
 _PROVENANCE_LINE = (
     "Source: Baseline | ERA5-Land reanalysis 1991-2025 (35-yr daily climatology, "
     "WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo"
@@ -43,13 +47,13 @@ def _post_context(payload: dict) -> dict:
     agent as the tool result, not let it surface as a stack trace."""
     url = f"{BASELINE_API_URL}/api/context"
     try:
-        response = httpx.post(url, json=payload, headers=_headers(), timeout=30.0)
+        response = httpx.post(url, json=payload, headers=_headers(), timeout=REQUEST_TIMEOUT_SECONDS)
     except httpx.ConnectError as error:
         raise RuntimeError(
             f"Could not reach the Baseline API at {url}. Is the server running? ({error})"
         )
     except httpx.TimeoutException:
-        raise RuntimeError(f"Baseline API at {url} timed out after 30s.")
+        raise RuntimeError(f"Baseline API at {url} timed out after {REQUEST_TIMEOUT_SECONDS:.0f}s.")
 
     if response.status_code == 401:
         raise RuntimeError(
@@ -137,9 +141,16 @@ def get_climate_context(query: str) -> str:
     forecast data and historical percentile rankings against a 35-year ERA5
     daily climatology (1991-2025, WMO 1991-2020 normals). Use this when you
     need to know not just what conditions are or will be, but how unusual
-    they are relative to history. Example queries: "Will Casper WY be warmer
-    than normal this week?", "Has Denver been drier than normal this year?",
-    "How cold was last winter in Billings?".
+    they are relative to history.
+
+    query MUST be phrased as a question in one of these forms (the location
+    goes where LOCATION is shown; the underlying parser matches these
+    patterns specifically and will fail on other phrasings, e.g. "weather
+    context for LOCATION" does not work):
+    - "Will LOCATION be warmer/wetter than normal this week?"
+    - "Has LOCATION been dry this water year?" / "this year?"
+    - "How cold/warm/wet was last winter/spring/summer/fall in LOCATION?"
+    - "What is the wettest/driest month in LOCATION?"
     """
     try:
         data = _post_context({"query": query})
