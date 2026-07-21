@@ -26,6 +26,13 @@ BASELINE_API_KEY = os.environ.get("BASELINE_API_KEY", "")
 # 60s gives real margin above that without leaving a genuinely-hung API pending forever.
 REQUEST_TIMEOUT_SECONDS = 60.0
 
+# /api/compare processes up to 10 locations at 2 concurrent workers server-side, so its
+# cold-start cost is not the single-location figure above — measured 2:57 for a cold
+# 10-location call in dev. This is a real latency problem (see baseline_mcp_server_plan.md
+# follow-up), not something to treat as settled; the longer timeout here just keeps the
+# tool from failing outright on large categories until that gets fixed.
+COMPARE_TIMEOUT_SECONDS = 240.0
+
 _PROVENANCE_LINE = (
     "Source: Baseline | ERA5-Land reanalysis 1991-2025 (35-yr daily climatology, "
     "WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo"
@@ -41,19 +48,19 @@ def _headers() -> dict:
     return headers
 
 
-def _post_context(payload: dict) -> dict:
-    """POST to Baseline's /api/context. Raises RuntimeError with an actionable
+def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
+    """POST to a Baseline API path. Raises RuntimeError with an actionable
     message on any failure — callers should catch this and hand it back to the
     agent as the tool result, not let it surface as a stack trace."""
-    url = f"{BASELINE_API_URL}/api/context"
+    url = f"{BASELINE_API_URL}{path}"
     try:
-        response = httpx.post(url, json=payload, headers=_headers(), timeout=REQUEST_TIMEOUT_SECONDS)
+        response = httpx.post(url, json=payload, headers=_headers(), timeout=timeout)
     except httpx.ConnectError as error:
         raise RuntimeError(
             f"Could not reach the Baseline API at {url}. Is the server running? ({error})"
         )
     except httpx.TimeoutException:
-        raise RuntimeError(f"Baseline API at {url} timed out after {REQUEST_TIMEOUT_SECONDS:.0f}s.")
+        raise RuntimeError(f"Baseline API at {url} timed out after {timeout:.0f}s.")
 
     if response.status_code == 401:
         raise RuntimeError(
@@ -74,6 +81,10 @@ def _post_context(payload: dict) -> dict:
         raise RuntimeError(f"Baseline API returned {response.status_code}: {detail}")
 
     return response.json()
+
+
+def _post_context(payload: dict) -> dict:
+    return _post("/api/context", payload)
 
 
 def _format_clarification(data: dict) -> str:
@@ -255,6 +266,132 @@ def compare_to_normal(location: str, variable: str, time_window: str = "") -> st
         return _format_clarification(data)
 
     return _format_context_result(data)
+
+
+def _resolve_location(text: str) -> dict:
+    """Resolve a place name or 'lat,lon' string to {lat, lon, label} via
+    Baseline's /api/resolve. Raises RuntimeError on failure or ambiguity."""
+    coords = _parse_coords(text)
+    if coords:
+        lat, lon = coords
+        return {"lat": lat, "lon": lon, "label": text}
+
+    data = _post("/api/resolve", {"location": text})
+
+    if data.get("status") == "ambiguous":
+        candidates = ", ".join(
+            c.get("label") or c.get("name", "?") for c in data.get("candidates", [])
+        )
+        raise RuntimeError(
+            f"{text!r} is ambiguous. Candidates: {candidates}. "
+            "Use a more specific name or exact coordinates."
+        )
+
+    return {"lat": data["lat"], "lon": data["lon"], "label": data.get("name", text)}
+
+
+def _format_compare_result(data: dict) -> str:
+    comparison = data.get("comparison", {})
+    lines = [
+        f"Compared {comparison.get('n_locations')} locations — "
+        f"{comparison.get('variable_label')}, {comparison.get('period_label')} "
+        f"(vs. {comparison.get('baseline_years')} baseline)",
+        "",
+    ]
+
+    for entry in comparison.get("ranked", []):
+        label = entry.get("label", "Unknown")
+        if entry.get("status") not in ("ok", "partial"):
+            lines.append(f"- {label}: no data ({entry.get('reason', 'unknown error')})")
+            continue
+
+        rank = entry.get("rank")
+        value = entry.get("value_display")
+        rank_label = entry.get("rank_label", "")
+        if entry.get("percent_of_normal") is not None:
+            lines.append(
+                f"{rank}. {label}: {value} ({entry['percent_of_normal']}% of normal) — {rank_label}"
+            )
+        else:
+            lines.append(
+                f"{rank}. {label}: {value} ({entry.get('departure_display')} vs. normal) — {rank_label}"
+            )
+
+    lines.append(f"\n{_PROVENANCE_LINE}")
+
+    lines.append("\n```json")
+    lines.append(json.dumps(data, indent=2, default=str))
+    lines.append("```")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def compare_locations(
+    locations: list[str] | None = None,
+    category: str = "",
+    variable: str = "precipitation",
+    period: str = "water_year",
+    season: str = "",
+    year: int = 0,
+    month: int = 0,
+) -> str:
+    """Compare precipitation or temperature across 2-10 locations in a single
+    ranked comparison, computed directly by Baseline. Use this instead of
+    calling get_climate_context or get_water_year_status once per location
+    and comparing the answers yourself — the ranking and percent-of-normal
+    figures in the result come from Baseline, not from your own arithmetic
+    over several separate answers.
+
+    Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
+    strings) OR `category` (a curated group name) — not both.
+
+    Valid category values: colorado_ski_resorts, wyoming_ski_resorts,
+    utah_ski_resorts, wyoming_watersheds, colorado_river_basin_states,
+    great_plains_ag, major_us_cities, major_european_cities,
+    us_national_parks.
+
+    variable: "precipitation" (default) or "temperature".
+    period: "water_year" (default, Oct 1 / Jan 1 to date), "season" (also
+    set season="winter"/"spring"/"summer"/"fall" and optionally year), or
+    "month" (also set month=1-12 and optionally year). Custom date ranges
+    are not supported by this tool — use "water_year", "season", or "month".
+    """
+    if locations and category:
+        return "Provide either locations or category, not both."
+    if not locations and not category:
+        return "Provide either locations (2-10 places) or category (a curated group name)."
+
+    payload: dict = {"variable": variable, "period": period}
+    if season:
+        payload["season"] = season
+    if year:
+        payload["year"] = year
+    if month:
+        payload["month"] = month
+
+    if category:
+        payload["category"] = category
+    else:
+        if len(locations) < 2 or len(locations) > 10:
+            return f"locations must have between 2 and 10 entries (got {len(locations)})."
+        resolved = []
+        for text in locations:
+            try:
+                resolved.append(_resolve_location(text))
+            except RuntimeError as error:
+                return str(error)
+        payload["locations"] = resolved
+
+    try:
+        data = _post("/api/compare", payload, timeout=COMPARE_TIMEOUT_SECONDS)
+    except RuntimeError as error:
+        return str(error)
+
+    if data.get("status") == "error":
+        return data.get("error", "Unknown error from Baseline API.")
+
+    return _format_compare_result(data)
 
 
 def main():
