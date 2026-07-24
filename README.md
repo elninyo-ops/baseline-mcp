@@ -1,5 +1,7 @@
 # baseline-mcp
 
+<!-- mcp-name: io.github.elninyo-ops/baseline-mcp -->
+
 MCP server exposing Baseline as agent tools — statistically rigorous weather and climate context, not just current conditions. Thin translation layer only: no climate logic lives here, every tool call is an HTTP request to the Baseline API. See `baseline_mcp_server_plan.md` in the Baseline project for the full design, and [`METHODOLOGY.md`](./METHODOLOGY.md) for how the underlying data and rankings are computed.
 
 ## Tools
@@ -59,4 +61,4 @@ Run against a local Baseline instance (`python3 app.py` in `../baseline`), then:
 
 ## Status
 
-All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. `METHODOLOGY.md` (trust collateral) complete. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Not yet published to PyPI or any MCP registry** — packaging is staged but the publish step is intentionally on hold.
+All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. `METHODOLOGY.md` (trust collateral) complete. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.0.**
