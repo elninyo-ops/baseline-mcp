@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.elninyo-ops/baseline-mcp",
+  "description": "Statistically rigorous weather and climate context: forecast plus 35-year historical ranking.",
+  "repository": {
+    "url": "https://github.com/elninyo-ops/baseline-mcp",
+    "source": "github"
+  },
+  "version": "0.1.1",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "baseline-mcp",
+      "version": "0.1.1",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Base URL of the Baseline API instance to query.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": false,
+          "name": "BASELINE_API_URL"
+        },
+        {
+          "description": "API key for the Baseline API. Contact chadmcnutt@gmail.com for a key -- self-serve signup is not yet available.",
+          "isRequired": true,
+          "format": "string",
+          "isSecret": true,
+          "name": "BASELINE_API_KEY"
+        }
+      ]
+    }
+  ]
+}
