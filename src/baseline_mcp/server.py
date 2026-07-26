@@ -9,6 +9,7 @@ See baseline_mcp_server_plan.md (companion doc, in the Baseline project dir)
 for the full design rationale.
 """
 
+import concurrent.futures
 import json
 import os
 import re
@@ -375,12 +376,26 @@ def compare_locations(
     else:
         if len(locations) < 2 or len(locations) > 10:
             return f"locations must have between 2 and 10 entries (got {len(locations)})."
-        resolved = []
-        for text in locations:
-            try:
-                resolved.append(_resolve_location(text))
-            except RuntimeError as error:
-                return str(error)
+        # Resolved in parallel, not sequentially — with several free-text
+        # locations this used to pay N round-trips end to end even though
+        # each resolve is independent. Errors are reported in list order
+        # (not first-to-finish) so the result is deterministic.
+        resolved: list[dict | None] = [None] * len(locations)
+        errors: list[str | None] = [None] * len(locations)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(locations), 5)) as executor:
+            futures = {
+                executor.submit(_resolve_location, text): i
+                for i, text in enumerate(locations)
+            }
+            for future in concurrent.futures.as_completed(futures):
+                i = futures[future]
+                try:
+                    resolved[i] = future.result()
+                except RuntimeError as error:
+                    errors[i] = str(error)
+        first_error = next((error for error in errors if error is not None), None)
+        if first_error:
+            return first_error
         payload["locations"] = resolved
 
     try:
