@@ -27,11 +27,12 @@ BASELINE_API_KEY = os.environ.get("BASELINE_API_KEY", "")
 # 60s gives real margin above that without leaving a genuinely-hung API pending forever.
 REQUEST_TIMEOUT_SECONDS = 60.0
 
-# /api/compare processes up to 10 locations at 2 concurrent workers server-side, so its
-# cold-start cost is not the single-location figure above — measured 2:57 for a cold
-# 10-location call in dev. This is a real latency problem (see baseline_mcp_server_plan.md
-# follow-up), not something to treat as settled; the longer timeout here just keeps the
-# tool from failing outright on large categories until that gets fixed.
+# /api/compare processes locations serially server-side (2026-07-26 fix: the
+# prior max_workers=2 caused thread oversubscription against each location's
+# own internal 10-way tile-loading pool and was measured *slower* than serial
+# -- 56s vs 33s for 3 cold locations). Cold-start cost still scales roughly
+# linearly with location count (~10s/location), so a full 10-location cold
+# category can still take ~100s+; this timeout keeps real margin above that.
 COMPARE_TIMEOUT_SECONDS = 240.0
 
 _PROVENANCE_LINE = (
