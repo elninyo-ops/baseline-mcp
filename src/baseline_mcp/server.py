@@ -319,7 +319,7 @@ def _format_compare_result(data: dict) -> str:
                 f"{rank}. {label}: {value} ({entry.get('departure_display')} vs. normal) — {rank_label}"
             )
 
-    lines.append(f"\n{_PROVENANCE_LINE}")
+    lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")
 
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
@@ -338,12 +338,12 @@ def compare_locations(
     year: int = 0,
     month: int = 0,
 ) -> str:
-    """Compare precipitation or temperature across 2-10 locations in a single
-    ranked comparison, computed directly by Baseline. Use this instead of
-    calling get_climate_context or get_water_year_status once per location
-    and comparing the answers yourself — the ranking and percent-of-normal
-    figures in the result come from Baseline, not from your own arithmetic
-    over several separate answers.
+    """Compare precipitation, temperature, or snowfall across 2-10 locations
+    in a single ranked comparison, computed directly by Baseline. Use this
+    instead of calling get_climate_context or get_water_year_status once per
+    location and comparing the answers yourself — the ranking and
+    percent-of-normal figures in the result come from Baseline, not from
+    your own arithmetic over several separate answers.
 
     Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
     strings) OR `category` (a curated group name) — not both.
@@ -353,11 +353,18 @@ def compare_locations(
     great_plains_ag, major_us_cities, major_european_cities,
     us_national_parks.
 
-    variable: "precipitation" (default) or "temperature".
+    variable: "precipitation" (default), "temperature", or "snowfall".
+    Snowfall is sourced from a different, coarser (0.25-degree) Open-Meteo
+    archive than precipitation/temperature (0.1-degree ERA5-Land) — results
+    are correct but not directly resolution-comparable across variables.
+
     period: "water_year" (default, Oct 1 / Jan 1 to date), "season" (also
-    set season="winter"/"spring"/"summer"/"fall" and optionally year), or
-    "month" (also set month=1-12 and optionally year). Custom date ranges
-    are not supported by this tool — use "water_year", "season", or "month".
+    set season="winter"/"spring"/"summer"/"fall" and optionally year),
+    "month" (also set month=1-12 and optionally year), or "ski_season"
+    (fixed Nov 1 - Apr 30 window; optionally set year=<November's year>,
+    e.g. year=2019 for the 2019-2020 season; defaults to the most recently
+    started ski season). Custom date ranges are not supported — use
+    "water_year", "season", "month", or "ski_season".
     """
     if locations and category:
         return "Provide either locations or category, not both."
@@ -375,6 +382,9 @@ def compare_locations(
         if not month:
             return "period='month' requires month to be set (1-12)."
         payload["month"] = month
+        if year:
+            payload["year"] = year
+    elif period == "ski_season":
         if year:
             payload["year"] = year
 
