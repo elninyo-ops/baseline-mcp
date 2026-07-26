@@ -364,12 +364,18 @@ def compare_locations(
         return "Provide either locations (2-10 places) or category (a curated group name)."
 
     payload: dict = {"variable": variable, "period": period}
-    if season:
+    if period == "season":
+        if not season:
+            return "period='season' requires season to be set (winter/spring/summer/fall)."
         payload["season"] = season
-    if year:
-        payload["year"] = year
-    if month:
+        if year:
+            payload["year"] = year
+    elif period == "month":
+        if not month:
+            return "period='month' requires month to be set (1-12)."
         payload["month"] = month
+        if year:
+            payload["year"] = year
 
     if category:
         payload["category"] = category
