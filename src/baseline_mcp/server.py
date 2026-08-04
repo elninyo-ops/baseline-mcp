@@ -310,14 +310,22 @@ def _format_compare_result(data: dict) -> str:
         rank = entry.get("rank")
         value = entry.get("value_display")
         rank_label = entry.get("rank_label", "")
+        # rank (group position, e.g. "4") and rank_label (this location's own
+        # all-time percentile, e.g. "least snowy") are two independent
+        # rankings -- rendering them on the same line ("4. ... -- least
+        # snowy") reads as directly contradictory. Split rank_label onto its
+        # own indented line so it can't be read as a continuation of the
+        # numbered group ranking.
         if entry.get("percent_of_normal") is not None:
             lines.append(
-                f"{rank}. {label}: {value} ({entry['percent_of_normal']}% of normal) — {rank_label}"
+                f"{rank}. {label}: {value} ({entry['percent_of_normal']}% of normal)"
             )
         else:
             lines.append(
-                f"{rank}. {label}: {value} ({entry.get('departure_display')} vs. normal) — {rank_label}"
+                f"{rank}. {label}: {value} ({entry.get('departure_display')} vs. normal)"
             )
+        if rank_label:
+            lines.append(f"   Historically: {rank_label} on record here")
 
     lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")
 
