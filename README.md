@@ -61,4 +61,4 @@ Run against a local Baseline instance (`python3 app.py` in `../baseline`), then:
 
 ## Status
 
-All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. `METHODOLOGY.md` (trust collateral) complete. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.0.**
+All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. Verified end-to-end against the production Baseline API as of the 2026-08-01 soft-launch prep (data freshness, temporal query handling, and climatology all fixed and confirmed live). `METHODOLOGY.md` (trust collateral) complete. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.1.**
