@@ -8,7 +8,7 @@ Baseline's historical numbers come from **ERA5-Land**, a reanalysis dataset prod
 
 That matters for a specific reason: station records are uneven. Stations open, close, move, get new instruments, or simply don't exist in a lot of the world's more sparsely monitored places. Comparing "this week vs. 1995" at a single station can mean comparing against a different instrument, a different location, or a gap in the record. A reanalysis grid doesn't have that problem — every grid cell has a complete, consistently-produced record for the full period, computed the same way in 2026 as it was for 1996. That consistency, more than raw accuracy at any single point, is why Baseline uses it as its historical baseline.
 
-**Coverage:** 1991–2025, 0.1° resolution (roughly 11 km at the equator), land areas only. ERA5-Land doesn't produce values for ocean grid cells, so locations resolve to the nearest valid land point — this occasionally matters for small islands or immediate coastlines.
+**Coverage:** 1991–2025, 0.1° resolution (roughly 11 km at the equator), land areas only. ERA5-Land doesn't produce values for ocean grid cells. Within the regions Baseline has generated tile data for, a location that lands on an ocean or otherwise invalid grid cell resolves to the nearest valid land cell in the same tile — this is how most coastlines and larger islands are handled. It does not search beyond the tile the location falls in: a location outside Baseline's generated tile coverage altogether (some small or remote islands, for instance) doesn't get snapped to a distant tile's land data. Baseline reports plainly that no historical baseline is available there rather than substitute a real, but geographically unrepresentative, answer.
 
 ## Climatology normals vs. historical ranking — two different periods, on purpose
 
@@ -41,9 +41,17 @@ This is a real limitation worth being upfront about: the Oct 1 water year start 
 
 Baseline's forward-looking numbers (the next 10 days) come from a separate source — **Open-Meteo** — and are never blended with, or used to adjust, the historical ranking. Forecast and historical context are always computed and reported independently.
 
+## Precipitation vs. snowfall — not the same variable
+
+When Baseline reports "precipitation," that number is always **liquid-equivalent precipitation** — rain, or the melted-water equivalent of any frozen precipitation — from the same ERA5-Land source described above. It is not a measurement of snow depth or snowfall amount.
+
+**Snowfall is a separate, more limited variable**, sourced differently: it comes from Open-Meteo's own ERA5 archive at 0.25° resolution (roughly 25 km, coarser than the 0.1° grid used for precipitation and temperature), because ERA5-Land itself does not produce a usable snowfall field. Snowfall is currently only available for comparing named locations against each other (for example, ranking ski resorts by seasonal snowfall) — it is not available as an answer to a question about a specific location on a specific date.
+
+**Practical effect:** asking Baseline something like "was there a lot of snow in [place] on [date]" will be answered using precipitation, not snowfall — and, if the question uses a snow-specific word, the response says so explicitly rather than silently substituting one variable for the other. If you need an actual snow-depth or snowfall-amount answer for a specific date, Baseline does not currently provide that; the location-comparison snowfall figures are the only real snowfall numbers it computes.
+
 ## Known limitations
 
-- **Land-only, 0.1° grid.** No ocean cells; locations near coastlines or on small islands resolve to the nearest valid land grid point, which may be a few kilometers away.
+- **Land-only, 0.1° grid.** No ocean cells; locations near coastlines or on larger islands resolve to the nearest valid land grid point within the same tile, which may be a few kilometers away. Locations outside Baseline's generated tile coverage entirely — including some small or remote islands — aren't snapped to a distant tile's data; Baseline reports no historical baseline available for those instead.
 - **Archive lag.** The most recent 1–2 months of ERA5-Land data can arrive with precipitation before temperature is finalized. When that gap occurs, Baseline falls back to Open-Meteo's historical archive for temperature and flags the response accordingly — it does not leave the gap unfilled or guess.
 - **Reanalysis vs. a specific station.** ERA5-Land is a model-assimilated reconstruction, not a direct instrument reading. It's built to be highly accurate and, critically, *consistent* across the full record — but a nearby station could show a somewhat different number for any single day.
 - **Oct 1 water year is a US convention**, applied to North American locations by default (see above).
