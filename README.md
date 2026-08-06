@@ -10,7 +10,7 @@ MCP server exposing Baseline as agent tools — statistically rigorous weather a
 - `get_context_for_coordinates` — same, for an exact lat/lon rather than a place name.
 - `get_water_year_status` — precipitation/temperature status since the start of the water year (Oct 1 US / Jan 1 elsewhere), ranked against 35 years.
 - `compare_to_normal` — how unusual current or forecast conditions are at one location.
-- `compare_locations` — rank precipitation or temperature across 2-10 locations (or a curated category like `colorado_ski_resorts`) in a single call.
+- `compare_locations` — rank precipitation, temperature, or snowfall across 2-10 locations (or a curated category like `colorado_ski_resorts`) in a single call, over a water year, season, month, or ski season.
 
 ## Installation
 
@@ -31,7 +31,7 @@ Then add it to your MCP client's config, with your API key:
       "command": "uvx",
       "args": ["baseline-mcp"],
       "env": {
-        "BASELINE_API_URL": "https://api.baseline.example",
+        "BASELINE_API_URL": "https://api.baselinecontext.com",
         "BASELINE_API_KEY": "your-key-here"
       }
     }
@@ -39,7 +39,7 @@ Then add it to your MCP client's config, with your API key:
 }
 ```
 
-**Claude Code**: `claude mcp add baseline --env BASELINE_API_URL=https://api.baseline.example --env BASELINE_API_KEY=your-key-here -- uvx baseline-mcp`
+**Claude Code**: `claude mcp add baseline --env BASELINE_API_URL=https://api.baselinecontext.com --env BASELINE_API_KEY=your-key-here -- uvx baseline-mcp`
 
 **Cursor** (`.cursor/mcp.json` or global MCP settings): same shape as the Claude Desktop config above, under whatever key Cursor's MCP settings use for server name.
 
@@ -61,4 +61,8 @@ Run against a local Baseline instance (`python3 app.py` in `../baseline`), then:
 
 ## Status
 
-All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. Verified end-to-end against the production Baseline API as of the 2026-08-01 soft-launch prep (data freshness, temporal query handling, and climatology all fixed and confirmed live). `METHODOLOGY.md` (trust collateral) complete. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.1.**
+All 5 tools built and tested against a live local Baseline instance, including tool-selection validation in Claude Desktop. Verified end-to-end against the production Baseline API as of the 2026-08-01 soft-launch prep (data freshness, temporal query handling, and climatology all fixed and confirmed live).
+
+The Baseline API each tool wraps was additionally exercised against production the week of 2026-08-05 through a ~150-question adversarial stress-test corpus (spatial, temporal, and phrasing edge cases) — real bugs were found and fixed at every layer this server depends on: location extraction, temporal-window parsing, and geocoding, all deployed and reverified live, zero regressions.
+
+`METHODOLOGY.md` (trust collateral) complete. Production now served over TLS at `api.baselinecontext.com`. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.2.**
