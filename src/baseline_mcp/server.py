@@ -148,25 +148,46 @@ def _format_context_result(data: dict) -> str:
 
 
 @mcp.tool()
-def get_climate_context(query: str) -> str:
-    """Get statistically rigorous weather and climate context for any location
-    on Earth (land only). Answers natural-language questions with 10-day
-    forecast data and historical percentile rankings against a 35-year ERA5
-    daily climatology (1991-2025, WMO 1991-2020 normals). Use this when you
-    need to know not just what conditions are or will be, but how unusual
-    they are relative to history.
+def get_climate_context(query: str, variables: list[str] | None = None) -> str:
+    """Check whether unusual weather might explain a real-world outcome (a
+    schedule slip, a cost overrun, an absenteeism spike, an insurance
+    dispute, a sales miss) or answer a direct weather/climate question.
+    Reaches further than "what's the weather" — a construction schedule
+    dispute over lost working days, a trucking fuel-cost overrun on a windy
+    corridor, a water-damage claim are all things this can check, even when
+    the question never mentions weather. Use it whenever weather is a
+    plausible contributor to an outcome, not only when someone asks about
+    weather directly.
 
-    query MUST be phrased as a question in one of these forms (the location
-    goes where LOCATION is shown; the underlying parser matches these
-    patterns specifically and will fail on other phrasings, e.g. "weather
-    context for LOCATION" does not work):
-    - "Will LOCATION be warmer/wetter than normal this week?"
-    - "Has LOCATION been dry this water year?" / "this year?"
-    - "How cold/warm/wet was last winter/spring/summer/fall in LOCATION?"
-    - "What is the wettest/driest month in LOCATION?"
+    Covers current conditions, a 10-day forecast, and how a specific past
+    period (a day, month, season, or water year) compared to 35 years of
+    history — temperature, precipitation, wind speed and gusts, and
+    snowfall — for any location on Earth (land only).
+
+    query: a natural-language question naming a location and, for a
+    historical question, a time period. Plain English — "was it unusually
+    windy in Casper this March," "how wet was last winter in Jackson" — no
+    fixed phrasing template to match.
+
+    variables: optional list narrowing which measurement(s) a historical
+    question checks: "temperature", "precipitation", "wind_speed",
+    "wind_gusts", "snowfall". Use it for a wind- or snow-specific question,
+    or to check more than one at once (e.g. wind alongside temperature for
+    a lost-working-days claim) — the question's wording alone may not
+    signal which variable matters. wind_speed/wind_gusts always return
+    together; snowfall and precipitation are independent. Omit to let the
+    question's wording decide.
+
+    When relaying results: if the answer discloses a rank is close to its
+    neighbors (e.g. "though it's within 0.2°F of the 3rd warmest year"),
+    include that in your answer — it's part of what makes the number
+    defensible, not a detail to compress out.
     """
+    payload: dict = {"query": query}
+    if variables:
+        payload["variables"] = variables
     try:
-        data = _post_context({"query": query})
+        data = _post_context(payload)
     except RuntimeError as error:
         return str(error)
 
