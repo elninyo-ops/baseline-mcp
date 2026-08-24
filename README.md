@@ -65,4 +65,6 @@ All 5 tools built and tested against a live local Baseline instance, including t
 
 The Baseline API each tool wraps was additionally exercised against production the week of 2026-08-05 through a ~150-question adversarial stress-test corpus (spatial, temporal, and phrasing edge cases) — real bugs were found and fixed at every layer this server depends on: location extraction, temporal-window parsing, and geocoding, all deployed and reverified live, zero regressions.
 
-`METHODOLOGY.md` (trust collateral) complete. Production now served over TLS at `api.baselinecontext.com`. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.2.**
+`METHODOLOGY.md` (trust collateral) complete. Production now served over TLS at `api.baselinecontext.com`. See `baseline_mcp_server_plan.md` in the Baseline project for full task history. **Published to [PyPI](https://pypi.org/project/baseline-mcp/) as of 0.1.3.**
+
+**0.1.3 (bugfix):** `uvx baseline-mcp` (and any fresh `pip install`) was broken for every new install as of PyPI's `mcp` package reaching 2.0.0 — this project's dependency was declared as `mcp[cli]>=1.28.1` with no upper bound, and 2.0.0 removed `mcp.server.fastmcp`, which `server.py` imports directly. Pinned to `mcp[cli]>=1.28.1,<2.0.0`. No functional changes to any tool.
