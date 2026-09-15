@@ -244,12 +244,17 @@ def get_water_year_status(location: str) -> str:
 
 @mcp.tool()
 def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
-    """Compare current or forecast conditions at a location to 35-year
+    """Compare the forecast for the next few days at a location to 35-year
     historical normals. Returns percentile rankings, not vague comparisons.
-    Use for questions like "is this week unusually warm" or "will it be
-    wetter than normal this month". variable must be "temperature" or
-    "precipitation". time_window is optional free text (e.g. "this week",
-    "this month") — defaults to "this week".
+    Use for questions like "is this week unusually warm" or "will this
+    weekend be wetter than normal". The forecast reaches 10 days ahead, so
+    time_window must be near-term: a window further out ("this month",
+    "this winter") is declined, and a past period ("last month", "this
+    water year") is a question for get_climate_context instead.
+    variable must be "temperature" or "precipitation". time_window is
+    optional free text for a near-term window (e.g. "today", "tomorrow",
+    "this weekend", "this week", "the next 10 days") — defaults to
+    "this week".
     """
     variable = variable.strip().lower()
     if variable not in ("temperature", "precipitation"):
