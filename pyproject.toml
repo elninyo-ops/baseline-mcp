@@ -1,14 +1,15 @@
 [project]
 name = "baseline-mcp"
 version = "0.1.5"
-description = "MCP server exposing Baseline's statistically rigorous weather and climate context as agent tools."
+description = "Stop your agent inventing climate context: ranked 35-year records for any point on Earth, cross-checked against real stations, with a reliability note to relay."
 readme = "README.md"
 license = "MIT"
 authors = [
     { name = "Chad McNutt", email = "chadmcnutt@gmail.com" },
 ]
 requires-python = ">=3.10"
-keywords = ["mcp", "weather", "climate", "era5", "agent-tools"]
+keywords = ["mcp", "weather", "climate", "era5", "agent-tools", "reanalysis",
+            "historical-weather", "seasonal-forecast", "climate-data"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
