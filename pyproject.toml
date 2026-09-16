@@ -1,6 +1,6 @@
 [project]
 name = "baseline-mcp"
-version = "0.1.6"
+version = "0.1.7"
 description = "Stop your agent inventing climate context: ranked 35-year records for any point on Earth, cross-checked against real stations, with a reliability note to relay."
 readme = "README.md"
 license = "MIT"
@@ -8,6 +8,12 @@ authors = [
     { name = "Chad McNutt", email = "chadmcnutt@gmail.com" },
 ]
 requires-python = ">=3.10"
+[project.urls]
+Homepage = "https://baselinecontext.com"
+Repository = "https://github.com/elninyo-ops/baseline-mcp"
+Documentation = "https://github.com/elninyo-ops/baseline-mcp/blob/main/METHODOLOGY.md"
+Issues = "https://github.com/elninyo-ops/baseline-mcp/issues"
+
 keywords = ["mcp", "weather", "climate", "era5", "agent-tools", "reanalysis",
             "historical-weather", "seasonal-forecast", "climate-data"]
 classifiers = [

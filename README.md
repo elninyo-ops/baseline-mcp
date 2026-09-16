@@ -7,20 +7,28 @@ cross-checked against real stations, with an explicit reliability note to relay 
 
 ---
 
-Ask it something, and this is what comes back:
+Ask it something, and this is what comes back.
+
+*A ranking — with the near-tie disclosed, and a station agreeing:*
 
 > **August 2026:** Mean temperature was 75°F, +2.8°F from normal, ranking as the **8th warmest
 > since 1991** — though the 7th warmest through 9th warmest years are within 0.7°F of each other.
 > A nearby station (CASPER-NATRONA COUNTY AP, 8.4 mi) **agrees**: +2.1°F from its own normal,
 > against the reanalysis's +2.8°F.
 
+*A station that does **not** agree — the gauge a mile away read half the grid's total:*
+
 > **March 2026:** Precipitation totaled 2.30 in — near average for this period historically.
 > A nearby station (BOZEMAN MONTANA STATE UNIVERSITY, 1.3 mi) **measured 1.12 in, against the
 > reanalysis's 2.30 in.**
 
+*A wind ranking that says plainly it is modeled, not measured:*
+
 > **March 2026:** Modeled peak gust: 60 mph, ranking as the **3rd gustiest since 1991** — though
 > it's within 1 mph of the 6th gustiest year. A station (Saratoga, 32.1 mi) measured a peak gust
 > of 59 mph. The reanalysis figure is **a modeled estimate, not a direct reading**.
+
+*A seasonal outlook carrying its own skill label:*
 
 > **Leaning wetter than normal for Sep–Nov in Nairobi, on odds we haven't been able to verify
 > here** — below normal 5%, near normal 19%, above normal 76%. Forecasts here do track wetter and
@@ -79,7 +87,7 @@ unrelated answers.
 | Forecast | Open-Meteo |
 
 Rankings use the full 1991–present record; "normal" means the WMO 1991–2020 reference period. See
-[`METHODOLOGY.md`](./METHODOLOGY.md) for how rankings, percentiles and water years are computed,
+[METHODOLOGY.md](https://github.com/elninyo-ops/baseline-mcp/blob/main/METHODOLOGY.md) for how rankings, percentiles and water years are computed,
 and where the limits are.
 
 ## Tools
@@ -132,7 +140,7 @@ claude mcp add baseline \
 ## Contributing
 
 This package is a thin translation layer: no climate logic lives here, and every tool call is an
-HTTP request to the Baseline Climate API. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for local
+HTTP request to the Baseline Climate API. See `CONTRIBUTING.md` in [the repository](https://github.com/elninyo-ops/baseline-mcp) for local
 development setup.
 
 MIT licensed.
