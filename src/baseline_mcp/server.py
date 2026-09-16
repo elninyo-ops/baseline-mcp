@@ -138,6 +138,22 @@ def _format_context_result(data: dict) -> str:
             if label is not None:
                 lines.append(f"- {label}: {value}")
 
+    # Baseline's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
+    # Work plan B3: where Baseline did not state its own confidence, the model filled the
+    # gap with speculation -- including claims that were wrong, one disagreement recycled
+    # across four unrelated answers, and reflexive "check the station" advice where nothing
+    # indicated a problem. A field buried in a JSON block does not prevent that; a labelled
+    # instruction might.
+    assessment = data.get("assessment") or {}
+    if assessment.get("headline"):
+        lines.append("\nBaseline Climate's own assessment — relay this, do not compose your own:")
+        lines.append(f"- {assessment['headline']}")
+        keep = assessment.get("if_shortened_keep")
+        if keep and keep != assessment["headline"]:
+            lines.append(f"- If you shorten it, keep this much intact: {keep}")
+        for claim in assessment.get("must_not_claim") or []:
+            lines.append(f"- This result does NOT support: {claim}")
+
     lines.append(f"\n{_PROVENANCE_LINE}")
 
     lines.append("\n```json")
@@ -164,6 +180,15 @@ def get_climate_context(query: str) -> str:
     - "Has LOCATION been dry this water year?" / "this year?"
     - "How cold/warm/wet was last winter/spring/summer/fall in LOCATION?"
     - "What is the wettest/driest month in LOCATION?"
+
+    Baseline Climate states its own confidence in an `assessment` field. Relay
+    `assessment.headline` as given. If you shorten it, keep
+    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
+    it turns a qualified statement into an unqualified one. Do not compose your own
+    assessment of how reliable a result is, do not carry a caveat from one location
+    or period to another, and do not add reliability warnings unless the response
+    flags a problem. `assessment.must_not_claim` lists what the result does not
+    support.
     """
     try:
         data = _post_context({"query": query})
@@ -182,6 +207,15 @@ def get_context_for_coordinates(latitude: float, longitude: float, label: str = 
     coordinates. Use when you have a specific latitude/longitude (a
     property, field, trailhead, or site) rather than a place name — this
     skips geocoding entirely. Land locations only.
+
+    Baseline Climate states its own confidence in an `assessment` field. Relay
+    `assessment.headline` as given. If you shorten it, keep
+    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
+    it turns a qualified statement into an unqualified one. Do not compose your own
+    assessment of how reliable a result is, do not carry a caveat from one location
+    or period to another, and do not add reliability warnings unless the response
+    flags a problem. `assessment.must_not_claim` lists what the result does not
+    support.
     """
     location_explicit = {"lat": latitude, "lon": longitude}
     if label:
@@ -220,6 +254,15 @@ def get_water_year_status(location: str) -> str:
     dry, warm, or cold. Built for drought monitoring, water resource,
     agricultural, and fire-planning contexts. location can be a place name
     ("Casper WY") or "lat,lon" coordinates.
+
+    Baseline Climate states its own confidence in an `assessment` field. Relay
+    `assessment.headline` as given. If you shorten it, keep
+    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
+    it turns a qualified statement into an unqualified one. Do not compose your own
+    assessment of how reliable a result is, do not carry a caveat from one location
+    or period to another, and do not add reliability warnings unless the response
+    flags a problem. `assessment.must_not_claim` lists what the result does not
+    support.
     """
     coords = _parse_coords(location)
     if coords:
@@ -255,6 +298,15 @@ def compare_to_normal(location: str, variable: str, time_window: str = "") -> st
     optional free text for a near-term window (e.g. "today", "tomorrow",
     "this weekend", "this week", "the next 10 days") — defaults to
     "this week".
+
+    Baseline Climate states its own confidence in an `assessment` field. Relay
+    `assessment.headline` as given. If you shorten it, keep
+    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
+    it turns a qualified statement into an unqualified one. Do not compose your own
+    assessment of how reliable a result is, do not carry a caveat from one location
+    or period to another, and do not add reliability warnings unless the response
+    flags a problem. `assessment.must_not_claim` lists what the result does not
+    support.
     """
     variable = variable.strip().lower()
     if variable not in ("temperature", "precipitation"):
