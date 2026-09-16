@@ -8,12 +8,6 @@ authors = [
     { name = "Chad McNutt", email = "chadmcnutt@gmail.com" },
 ]
 requires-python = ">=3.10"
-[project.urls]
-Homepage = "https://baselinecontext.com"
-Repository = "https://github.com/elninyo-ops/baseline-mcp"
-Documentation = "https://github.com/elninyo-ops/baseline-mcp/blob/main/METHODOLOGY.md"
-Issues = "https://github.com/elninyo-ops/baseline-mcp/issues"
-
 keywords = ["mcp", "weather", "climate", "era5", "agent-tools", "reanalysis",
             "historical-weather", "seasonal-forecast", "climate-data"]
 classifiers = [
@@ -28,6 +22,12 @@ dependencies = [
     "httpx>=0.27",
     "python-dotenv>=1.0",
 ]
+
+[project.urls]
+Homepage = "https://baselinecontext.com"
+Repository = "https://github.com/elninyo-ops/baseline-mcp"
+Documentation = "https://github.com/elninyo-ops/baseline-mcp/blob/main/METHODOLOGY.md"
+Issues = "https://github.com/elninyo-ops/baseline-mcp/issues"
 
 [project.scripts]
 baseline-mcp = "baseline_mcp.server:main"
