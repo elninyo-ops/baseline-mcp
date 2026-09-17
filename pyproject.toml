@@ -1,6 +1,6 @@
 [project]
 name = "baseline-mcp"
-version = "0.1.7"
+version = "0.1.8"
 description = "Stop your agent inventing climate context: ranked 35-year records for any point on Earth, cross-checked against real stations, with a reliability note to relay."
 readme = "README.md"
 license = "MIT"
