@@ -40,6 +40,16 @@ _PROVENANCE_LINE = (
     "WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo"
 )
 
+# The seasonal outlook comes from somewhere else entirely, and the line above would
+# misattribute it: no ERA5-Land, no Open-Meteo, a different forecast system and different
+# verifying observations per variable. A provenance line that names the wrong sources is
+# worse than none, because it reads as precision.
+_SEASONAL_PROVENANCE_LINE = (
+    "Source: Baseline | Seasonal outlook: ECMWF SEAS5 (system 51), calibrated per box "
+    "against 1981-2016 observations | Verified against GHCN_CAMS (temperature) and CPC "
+    "Global Unified gauge analysis (precipitation) | Recent-record figures: ERA5-Land"
+)
+
 mcp = FastMCP("Baseline")
 
 
@@ -108,6 +118,32 @@ def _format_clarification(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _assessment_lines(data: dict) -> list:
+    """Baseline's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
+
+    Work plan B3: where Baseline did not state its own confidence, the model filled the
+    gap with speculation -- including claims that were wrong, one disagreement recycled
+    across four unrelated answers, and reflexive "check the station" advice where nothing
+    indicated a problem. A field buried in a JSON block does not prevent that; a labelled
+    instruction might.
+
+    Shared by both formatters. It used to live inside the context formatter only, and the
+    seasonal responses need it MORE, not less -- their caveats are the difference between
+    an honest outlook and a forecast claim.
+    """
+    assessment = data.get("assessment") or {}
+    if not assessment.get("headline"):
+        return []
+    lines = ["\nBaseline Climate's own assessment — relay this, do not compose your own:",
+             f"- {assessment['headline']}"]
+    keep = assessment.get("if_shortened_keep")
+    if keep and keep != assessment["headline"]:
+        lines.append(f"- If you shorten it, keep this much intact: {keep}")
+    for claim in assessment.get("must_not_claim") or []:
+        lines.append(f"- This result does NOT support: {claim}")
+    return lines
+
+
 def _format_context_result(data: dict) -> str:
     lines = []
 
@@ -144,15 +180,7 @@ def _format_context_result(data: dict) -> str:
     # across four unrelated answers, and reflexive "check the station" advice where nothing
     # indicated a problem. A field buried in a JSON block does not prevent that; a labelled
     # instruction might.
-    assessment = data.get("assessment") or {}
-    if assessment.get("headline"):
-        lines.append("\nBaseline Climate's own assessment — relay this, do not compose your own:")
-        lines.append(f"- {assessment['headline']}")
-        keep = assessment.get("if_shortened_keep")
-        if keep and keep != assessment["headline"]:
-            lines.append(f"- If you shorten it, keep this much intact: {keep}")
-        for claim in assessment.get("must_not_claim") or []:
-            lines.append(f"- This result does NOT support: {claim}")
+    lines.extend(_assessment_lines(data))
 
     lines.append(f"\n{_PROVENANCE_LINE}")
 
@@ -180,6 +208,16 @@ def get_climate_context(query: str) -> str:
     - "Has LOCATION been dry this water year?" / "this year?"
     - "How cold/warm/wet was last winter/spring/summer/fall in LOCATION?"
     - "What is the wettest/driest month in LOCATION?"
+
+    It also answers SEASONAL (three-month) outlook questions, which are about the
+    season ahead rather than the next ten days:
+    - "Will this season be warmer/wetter than normal in LOCATION?"
+    - "Will this winter/spring/summer/fall be warm and wet in LOCATION?"
+
+    Seasonal answers carry a per-location skill label and sometimes say that no
+    outlook is currently issued, which is a correct answer rather than a failure —
+    see get_seasonal_outlook, which takes a place and variables directly and is the
+    better choice when the question is plainly about the season ahead.
 
     Baseline Climate states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
@@ -489,6 +527,116 @@ def compare_locations(
         return data.get("error", "Unknown error from Baseline API.")
 
     return _format_compare_result(data)
+
+
+def _format_seasonal_result(data: dict) -> str:
+    lines = []
+    loc = data.get("location") or {}
+    if loc.get("name"):
+        lines.append(f"Location: {loc['name']}")
+    season = data.get("season")
+    variables = data.get("variables") or ([data["variable"]] if data.get("variable") else [])
+    if season:
+        lines.append(f"Season: {season}   Variables: {', '.join(variables)}")
+
+    short_answer = data.get("short_answer") or {}
+    if short_answer.get("answer"):
+        lines.append(f"\nSeasonal outlook: {short_answer['answer']}")
+        if short_answer.get("confidence"):
+            lines.append(f"\nConfidence: {short_answer['confidence']}")
+
+    # The skill label per variable, named rather than left for the model to infer from prose.
+    for variable in variables:
+        block = (data.get("by_variable") or {}).get(variable) or data
+        skill = block.get("skill") or {}
+        if skill.get("status"):
+            lines.append(f"- {variable}: skill status {skill['status']}")
+
+    lines.extend(_assessment_lines(data))
+    lines.append(f"\n{_SEASONAL_PROVENANCE_LINE}")
+    lines.append("\n```json")
+    lines.append(json.dumps(data, indent=2, default=str))
+    lines.append("```")
+    return "\n".join(lines)
+
+
+@mcp.tool()
+def get_seasonal_outlook(
+    location: str,
+    variables: list[str] | None = None,
+    season: str = "",
+) -> str:
+    """Seasonal (three-month) outlook for a location: calibrated probabilities that the
+    season will be below, near or above normal, for temperature, precipitation, or both.
+
+    This is a three-month climate outlook, not a weather forecast. For conditions over the
+    next ten days, or for how unusual recent weather has been, use get_climate_context.
+
+    location: a place name ("Harare", "Denver, Colorado") or a "lat,lon" string.
+    variables: any of "temperature", "precipitation". Defaults to BOTH, which answers
+        compound questions like "will this winter be warm and wet" in one call — ask for
+        both rather than calling twice and stitching the answers together.
+    season: optional "DJF", "MAM", "JJA" or "SON". Leave empty for the season currently
+        being forecast, which is almost always what a question about "this season" means.
+
+    WHAT YOU GET BACK, AND HOW IT VARIES BY PLACE:
+
+    Probabilities are produced for every land location the model covers, and they are
+    always returned. How well they have been tested is a separate matter that varies by
+    location and season: at some places the odds have been shown to beat a climatological
+    guess, at some only the direction is worth using, at some a simple warming trend
+    predicted the season better than the model did, and at many they have never been
+    tested at all. The answer states which of these applies in its own words. Relay that
+    standing as written — an untested outlook is not a bad one, and neither is it a
+    verified one.
+
+    "NO OUTLOOK IS CURRENTLY ISSUED" IS A NORMAL, CORRECT ANSWER. An outlook exists only
+    for the forecast cycle now live, which is the season the models have most recently
+    been run for. Ask in September about the coming December-February and the honest reply
+    is that none is issued yet, because the forecast it would be built from has not been
+    produced. That is expected behaviour, not a failure, a gap in coverage or a reason to
+    retry: relay it as given, and say when the outlook will be published if the response
+    says so. Do not substitute a forecast, a historical average or your own estimate.
+
+    Some answers say the forecast is more extreme than anything in the years the model was
+    fitted on, and that the odds are held at the strongest the record supports. This is
+    common rather than exotic — it applies to about a third of locations on the current
+    cycle and to most tropical ones. Keep that sentence; it is the difference between a
+    bounded estimate and an invented one.
+
+    Baseline Climate states its own confidence in an `assessment` field. Relay
+    `assessment.headline` as given. If you shorten it, keep `assessment.if_shortened_keep`
+    intact — it carries the qualifier, and for a two-variable answer it carries one for
+    each half, so dropping part of it turns a qualified statement into an unqualified one.
+    Do not compose your own assessment of how reliable a result is, and do not carry a
+    caveat from one location or season to another.
+    """
+    wanted = [v.strip().lower() for v in (variables or ["temperature", "precipitation"])
+              if v and v.strip()]
+    if not wanted:
+        wanted = ["temperature", "precipitation"]
+    unknown = [v for v in wanted if v not in ("temperature", "precipitation")]
+    if unknown:
+        return (f"Unknown variable(s): {', '.join(unknown)}. "
+                f"This tool covers temperature and precipitation.")
+
+    try:
+        place = _resolve_location(location)
+    except RuntimeError as error:
+        return str(error)
+
+    payload = {"lat": place["lat"], "lon": place["lon"],
+               "label": place.get("label") or location,
+               "variables": list(dict.fromkeys(wanted))}
+    if season:
+        payload["season"] = season.strip().upper()
+
+    try:
+        data = _post("/api/seasonal-outlook", payload)
+    except RuntimeError as error:
+        return str(error)
+
+    return _format_seasonal_result(data)
 
 
 def main():
