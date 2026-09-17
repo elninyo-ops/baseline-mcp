@@ -36,5 +36,10 @@ baseline-mcp = "baseline_mcp.server:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Fails the build when server.json's version fields disagree with the one above. See
+# hatch_build.py -- the note in CONTRIBUTING.md did not stop three releases drifting.
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/baseline_mcp"]
