@@ -29,11 +29,39 @@ defaults to `uv run` on a fresh connect — repoint the Command field by hand ea
 
 ## Releasing
 
+**The version lives in THREE places and all three must move together.**
+
+| file | field |
+|---|---|
+| `pyproject.toml` | `version` |
+| `server.json` | `version` (top level) |
+| `server.json` | `packages[0].version` |
+
+`pyproject.toml` is what PyPI publishes. **`server.json` is the MCP registry manifest**, and
+nothing in the build will complain if it disagrees — a release with a stale `server.json`
+publishes fine and quietly points the registry at an older version. That is not
+hypothetical: `server.json` sat at `0.1.4` through the 0.1.5, 0.1.6 and 0.1.7 releases,
+so anyone installing from the registry got a build without the relay instruction, the
+wording work or the seasonal tool.
+
 ```bash
+# 1. bump all three fields above, and check them:
+grep -n '^version' pyproject.toml && grep -n '"version"' server.json
+
 rm -rf dist/ build/       # a stale dist/ will re-upload the PREVIOUS version and be rejected
 python -m build           # or: uv build
 twine check dist/*        # confirm the version you expect, and only that version
 twine upload dist/*       # or: uv publish
+```
+
+Worth confirming from the built artifact rather than the source tree, because a malformed
+`pyproject.toml` can drop fields silently — a `[project.urls]` table placed above `keywords`
+swallowed the keywords, classifiers and dependencies at 0.1.7 and still built:
+
+```bash
+python -c "import zipfile,sys; z=zipfile.ZipFile(sys.argv[1]); \
+  m=[n for n in z.namelist() if n.endswith('METADATA')][0]; print(z.read(m).decode()[:800])" \
+  dist/*.whl
 ```
 
 The index can lag a minute or two behind a successful upload, so a check immediately after
