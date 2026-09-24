@@ -164,6 +164,11 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
     if response.status_code == 429:
         body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
         _call_quota.set(None)  # the message below says it all; no second quota line
+        if "lookup_limit" in body:
+            raise RuntimeError(
+                f"Baseline's daily limit of {body['lookup_limit']} place lookups is used up for "
+                f"this key. It resets {_local_reset(body.get('reset_at'))}. Tell the user."
+            )
         raise RuntimeError(
             f"Baseline's daily limit of {body.get('daily_limit')} questions is used up for this "
             f"key. It resets {_local_reset(body.get('reset_at'))}. Nothing is wrong with the "

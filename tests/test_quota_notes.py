@@ -66,6 +66,17 @@ def test_the_limit_itself_says_when_it_resets_in_local_time_and_nothing_else():
     assert result.count("Baseline quota") == 0
 
 
+def test_a_refused_place_lookup_says_lookups_not_questions():
+    body = {"error": "Too many place lookups today", "lookup_limit": 1000, "reset_at": RESET_AT}
+    real_post = httpx.post
+    httpx.post = lambda *a, **k: _response(429, 40, body=body)
+    try:
+        result = server.compare_locations(locations=["Casper, WY", "Laramie, WY"])
+    finally:
+        httpx.post = real_post
+    assert "limit of 1000 place lookups is used up" in result and "None" not in result
+
+
 def test_an_unlimited_key_hears_nothing():
     first, second = _ask(_response(200, None), _response(200, None))
     assert "quota" not in first.lower() and "quota" not in second.lower()
