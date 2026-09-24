@@ -10,9 +10,13 @@ for the full design rationale.
 """
 
 import concurrent.futures
+import contextvars
+import functools
 import json
 import os
 import re
+import threading
+from datetime import datetime
 
 import httpx
 from dotenv import load_dotenv
@@ -53,6 +57,81 @@ _SEASONAL_PROVENANCE_LINE = (
 mcp = FastMCP("Baseline")
 
 
+# --- Daily quota (2026-09-24) ---------------------------------------------------------------
+# Every API response to a limited key carries X-RateLimit-* headers. Each tool result ends with
+# a line about the allowance when it matters: once on the first call this process makes (so a
+# new user learns the limit before meeting it), whenever less than 10% is left, and on the 429.
+# The owner's own key once hit the wall with no warning at all; that must never happen to a user.
+# Reset times are shown in this machine's local time -- the connector runs on the user's own
+# computer, which is the one place that knows their time zone.
+_LOW_QUOTA_FRACTION = 0.10
+_call_quota: contextvars.ContextVar = contextvars.ContextVar("baseline_quota", default=None)
+_intro_lock = threading.Lock()
+_intro_shown = False
+
+
+def _quota_from_headers(headers) -> dict | None:
+    try:
+        return {"limit": int(headers["X-RateLimit-Limit"]),
+                "remaining": int(headers["X-RateLimit-Remaining"]),
+                "reset_at": headers.get("X-RateLimit-Reset-At")}
+    except (KeyError, TypeError, ValueError):
+        return None  # an unlimited key, or an older server: nothing to say
+
+
+def _local_reset(reset_at: str | None, now: datetime | None = None) -> str:
+    """'6:00 PM MDT today (in 8 h 12 min)' -- the UTC reset in the user's own time."""
+    try:
+        reset = datetime.fromisoformat(reset_at).astimezone()
+    except (TypeError, ValueError):
+        return "at midnight UTC"
+    now = (now or datetime.now()).astimezone()
+    clock = reset.strftime("%I:%M %p").lstrip("0")
+    days = (reset.date() - now.date()).days
+    day = {0: "today", 1: "tomorrow"}.get(days, reset.strftime("%A"))
+    minutes = max(int((reset - now).total_seconds() // 60), 0)
+    wait = f"{minutes // 60} h {minutes % 60} min" if minutes >= 60 else f"{minutes} min"
+    return f"at {clock} {reset.tzname()} {day} (in {wait})"
+
+
+def _quota_note(quota: dict | None, first_call: bool) -> str:
+    if not quota:
+        return ""
+    limit, remaining = quota["limit"], quota["remaining"]
+    when = _local_reset(quota["reset_at"])
+    if remaining == 0:
+        return (f"Baseline quota: that was the last of today's {limit} questions on this key. "
+                f"It resets {when}. Tell the user.")
+    if remaining < limit * _LOW_QUOTA_FRACTION:
+        return (f"Baseline quota: {remaining} of {limit} questions left today on this key; "
+                f"resets {when}. Tell the user.")
+    if first_call:
+        return (f"Baseline quota: this key allows {limit} questions a day, and {remaining} are "
+                f"left today. The count resets {when}. Mention this to the user once.")
+    return ""
+
+
+def _with_quota_note(tool):
+    """Append the quota line to a tool's result. Wraps the tool itself so every path out of it,
+    error strings included, gets the line."""
+    @functools.wraps(tool)
+    def wrapper(*args, **kwargs):
+        global _intro_shown
+        token = _call_quota.set(None)
+        try:
+            result = tool(*args, **kwargs)
+            quota = _call_quota.get()
+        finally:
+            _call_quota.reset(token)
+        with _intro_lock:
+            first_call = quota is not None and not _intro_shown
+            if first_call:
+                _intro_shown = True
+        note = _quota_note(quota, first_call)
+        return f"{result}\n\n{note}" if note else result
+    return wrapper
+
+
 def _headers() -> dict:
     headers = {"Content-Type": "application/json"}
     if BASELINE_API_KEY:
@@ -79,11 +158,16 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
             "Baseline API rejected the request (401 Unauthorized). "
             "Check that BASELINE_API_KEY is set and valid."
         )
+    quota = _quota_from_headers(response.headers)
+    if quota:
+        _call_quota.set(quota)
     if response.status_code == 429:
         body = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
+        _call_quota.set(None)  # the message below says it all; no second quota line
         raise RuntimeError(
-            f"Baseline API rate limit exceeded (daily_limit={body.get('daily_limit')}, "
-            f"resets at {body.get('reset_at')})."
+            f"Baseline's daily limit of {body.get('daily_limit')} questions is used up for this "
+            f"key. It resets {_local_reset(body.get('reset_at'))}. Nothing is wrong with the "
+            "question: ask again after the reset. Tell the user."
         )
     if response.status_code >= 400:
         try:
@@ -192,6 +276,7 @@ def _format_context_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_with_quota_note
 def get_climate_context(query: str) -> str:
     """Get statistically rigorous weather and climate context for any location
     on Earth (land only). Answers natural-language questions with 10-day
@@ -240,6 +325,7 @@ def get_climate_context(query: str) -> str:
 
 
 @mcp.tool()
+@_with_quota_note
 def get_context_for_coordinates(latitude: float, longitude: float, label: str = "") -> str:
     """Get 10-day forecast and 35-year historical climate context for exact
     coordinates. Use when you have a specific latitude/longitude (a
@@ -284,6 +370,7 @@ def _parse_coords(text: str):
 
 
 @mcp.tool()
+@_with_quota_note
 def get_water_year_status(location: str) -> str:
     """Get water year precipitation and temperature status for a location:
     totals since the start of the water/calendar year (Oct 1 for North
@@ -324,6 +411,7 @@ def get_water_year_status(location: str) -> str:
 
 
 @mcp.tool()
+@_with_quota_note
 def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
     """Compare the forecast for the next few days at a location to 35-year
     historical normals. Returns percentile rankings, not vague comparisons.
@@ -432,6 +520,7 @@ def _format_compare_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_with_quota_note
 def compare_locations(
     locations: list[str] | None = None,
     category: str = "",
@@ -561,6 +650,7 @@ def _format_seasonal_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_with_quota_note
 def get_seasonal_outlook(
     location: str,
     variables: list[str] | None = None,
