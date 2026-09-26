@@ -8,6 +8,7 @@ the agent sees, not a helper in isolation.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import httpx
@@ -32,9 +33,11 @@ def _ask(*responses) -> list[str]:
     queue = list(responses)
     real_post = httpx.post
     httpx.post = lambda *a, **k: queue.pop(0)
-    server._intro_shown = False
+    server._intro_shown_for.clear()
     try:
-        return [server.get_climate_context("Has Casper, WY been dry this year?") for _ in responses]
+        # Tools are async since Part D (_logged runs them in a worker thread).
+        return [asyncio.run(server.get_climate_context("Has Casper, WY been dry this year?"))
+                for _ in responses]
     finally:
         httpx.post = real_post
 
@@ -71,7 +74,7 @@ def test_a_refused_place_lookup_says_lookups_not_questions():
     real_post = httpx.post
     httpx.post = lambda *a, **k: _response(429, 40, body=body)
     try:
-        result = server.compare_locations(locations=["Casper, WY", "Laramie, WY"])
+        result = asyncio.run(server.compare_locations(locations=["Casper, WY", "Laramie, WY"]))
     finally:
         httpx.post = real_post
     assert "limit of 1000 place lookups is used up" in result and "None" not in result
@@ -93,7 +96,11 @@ def test_every_tool_carries_the_quota_line():
     """A tool added later without the wrapper would be the one path that never warns."""
     tools = server.mcp._tool_manager.list_tools()
     assert len(tools) >= 6
-    unwrapped = [t.name for t in tools if t.fn.__code__ is not server._with_quota_note(lambda: 0).__code__]
+    logged = server._logged(lambda: 0).__code__
+    quota = server._with_quota_note(lambda: 0).__code__
+    # Outermost: _logged (worker thread + the per-call log line, Part D); then the quota line.
+    unwrapped = [t.name for t in tools
+                 if t.fn.__code__ is not logged or t.fn.__wrapped__.__code__ is not quota]
     assert unwrapped == []
 
 

@@ -12,10 +12,13 @@ for the full design rationale.
 import concurrent.futures
 import contextvars
 import functools
+import hashlib
 import json
+import logging
 import os
 import re
 import threading
+import time
 from datetime import datetime
 
 import httpx
@@ -67,7 +70,9 @@ mcp = FastMCP("Baseline")
 _LOW_QUOTA_FRACTION = 0.10
 _call_quota: contextvars.ContextVar = contextvars.ContextVar("baseline_quota", default=None)
 _intro_lock = threading.Lock()
-_intro_shown = False
+# Callers (by key fingerprint) who have had the first-call quota line. One entry locally; one
+# per key when the server is remote and shared.
+_intro_shown_for: set = set()
 
 
 def _quota_from_headers(headers) -> dict | None:
@@ -116,27 +121,92 @@ def _with_quota_note(tool):
     error strings included, gets the line."""
     @functools.wraps(tool)
     def wrapper(*args, **kwargs):
-        global _intro_shown
         token = _call_quota.set(None)
         try:
             result = tool(*args, **kwargs)
             quota = _call_quota.get()
         finally:
             _call_quota.reset(token)
+        caller = _caller_id(_caller_key())
         with _intro_lock:
-            first_call = quota is not None and not _intro_shown
+            first_call = quota is not None and caller not in _intro_shown_for
             if first_call:
-                _intro_shown = True
+                _intro_shown_for.add(caller)
         note = _quota_note(quota, first_call)
         return f"{result}\n\n{note}" if note else result
     return wrapper
 
 
+# --- Remote (HTTP) mode (Part D, 2026-09-26) -------------------------------------------------
+# Locally the connector runs on the user's computer over stdio with the key from its own
+# environment. Remote, one server answers many callers: each tool call uses the key sent in THAT
+# request's header, so every question counts against the caller's own quota (quota attribution),
+# and the server holds no key of its own. Same code, same tools; the transport is a startup flag.
+_REMOTE = False
+_call_status: contextvars.ContextVar = contextvars.ContextVar("baseline_call_status", default=None)
+log = logging.getLogger("baseline_mcp")
+
+
+def _key_from_headers(headers) -> str:
+    """The caller's key from X-Api-Key or Authorization: Bearer. Never from the URL."""
+    key = (headers.get("x-api-key") or "").strip()
+    if not key:
+        auth = (headers.get("authorization") or "").strip()
+        if auth.lower().startswith("bearer "):
+            key = auth[7:].strip()
+    return key
+
+
+def _caller_key() -> str:
+    if not _REMOTE:
+        return BASELINE_API_KEY
+    from mcp.server.lowlevel.server import request_ctx
+    try:
+        request = request_ctx.get().request
+    except LookupError:
+        return ""
+    return _key_from_headers(request.headers) if request is not None else ""
+
+
+def _caller_id(key: str) -> str:
+    """How logs name a caller: the start of the key's SHA-256, as the key registry does. Never
+    the key itself."""
+    return "sha256:" + hashlib.sha256(key.encode()).hexdigest()[:10] if key else "none"
+
+
 def _headers() -> dict:
     headers = {"Content-Type": "application/json"}
-    if BASELINE_API_KEY:
-        headers["X-Api-Key"] = BASELINE_API_KEY
+    key = _caller_key()
+    if key:
+        headers["X-Api-Key"] = key
     return headers
+
+
+def _logged(tool):
+    """Run a tool in a worker thread (a sync tool on the event loop would block every other
+    caller for the length of a question) and log one line per call: tool, milliseconds, status,
+    caller fingerprint. Never the key, never the arguments."""
+    import anyio
+
+    def _run(*args, **kwargs):
+        token = _call_status.set("ok")
+        try:
+            return tool(*args, **kwargs), _call_status.get()
+        finally:
+            _call_status.reset(token)
+
+    @functools.wraps(tool)
+    async def wrapper(*args, **kwargs):
+        start = time.monotonic()
+        status, result = "exception", None
+        try:
+            result, status = await anyio.to_thread.run_sync(functools.partial(_run, *args, **kwargs))
+            return result
+        finally:
+            log.info(json.dumps({"event": "tool", "tool": tool.__name__,
+                                 "ms": round((time.monotonic() - start) * 1000),
+                                 "status": status, "caller": _caller_id(_caller_key())}))
+    return wrapper
 
 
 def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
@@ -147,12 +217,16 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
     try:
         response = httpx.post(url, json=payload, headers=_headers(), timeout=timeout)
     except httpx.ConnectError as error:
+        _call_status.set("unreachable")
         raise RuntimeError(
             f"Could not reach the Baseline API at {url}. Is the server running? ({error})"
         )
     except httpx.TimeoutException:
+        _call_status.set("timeout")
         raise RuntimeError(f"Baseline API at {url} timed out after {timeout:.0f}s.")
 
+    if response.status_code >= 400:
+        _call_status.set(f"http_{response.status_code}")
     if response.status_code == 401:
         raise RuntimeError(
             "Baseline API rejected the request (401 Unauthorized). "
@@ -281,6 +355,7 @@ def _format_context_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def get_climate_context(query: str) -> str:
     """Get statistically rigorous weather and climate context for any location
@@ -330,6 +405,7 @@ def get_climate_context(query: str) -> str:
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def get_context_for_coordinates(latitude: float, longitude: float, label: str = "") -> str:
     """Get 10-day forecast and 35-year historical climate context for exact
@@ -375,6 +451,7 @@ def _parse_coords(text: str):
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def get_water_year_status(location: str) -> str:
     """Get water year precipitation and temperature status for a location:
@@ -416,6 +493,7 @@ def get_water_year_status(location: str) -> str:
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
     """Compare the forecast for the next few days at a location to 35-year
@@ -536,6 +614,7 @@ def _format_compare_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def compare_locations(
     locations: list[str] | None = None,
@@ -608,8 +687,10 @@ def compare_locations(
         resolved: list[dict | None] = [None] * len(locations)
         errors: list[str | None] = [None] * len(locations)
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(locations), 5)) as executor:
+            # Each worker runs in a copy of this call's context: a plain pool thread does not
+            # inherit it, and remotely the caller's key lives there (_caller_key).
             futures = {
-                executor.submit(_resolve_location, text): i
+                executor.submit(contextvars.copy_context().run, _resolve_location, text): i
                 for i, text in enumerate(locations)
             }
             for future in concurrent.futures.as_completed(futures):
@@ -666,6 +747,7 @@ def _format_seasonal_result(data: dict) -> str:
 
 
 @mcp.tool()
+@_logged
 @_with_quota_note
 def get_seasonal_outlook(
     location: str,
@@ -745,8 +827,115 @@ def get_seasonal_outlook(
     return _format_seasonal_result(data)
 
 
+@mcp.custom_route("/healthz", methods=["GET"])
+async def _healthz(request):
+    """Liveness only, no key needed; says nothing about the Baseline API behind it."""
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "ok"})
+
+
+_KEY_CHECK_TTL_SECONDS = 300.0
+_key_checks: dict = {}          # caller id -> (valid, checked_at)
+
+
+async def _key_is_valid(key: str) -> bool | None:
+    """Ask the Baseline API whether a key is live (/api/usage costs no question). True, False,
+    or None when the API can't say. Cached briefly per key fingerprint, so a session's many
+    requests make one check, and a deactivated key stops working within minutes."""
+    caller = _caller_id(key)
+    hit = _key_checks.get(caller)
+    if hit and time.monotonic() - hit[1] < _KEY_CHECK_TTL_SECONDS:
+        return hit[0]
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{BASELINE_API_URL}/api/usage", headers={"X-Api-Key": key})
+    except httpx.HTTPError:
+        return None
+    if response.status_code in (401, 403):
+        valid = False
+    elif response.status_code < 400:
+        valid = True
+    else:
+        return None
+    _key_checks[caller] = (valid, time.monotonic())
+    return valid
+
+
+def _auth_gate(app):
+    """ASGI gate in front of the MCP app in remote mode: a request with no key, or a key the
+    Baseline API does not know, gets a plain 401 before any MCP handling. /healthz is open."""
+    async def _reply(send, status: int, message: str):
+        body = json.dumps({"error": message}).encode()
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"content-type", b"application/json"),
+                                (b"content-length", str(len(body)).encode())]})
+        await send({"type": "http.response.body", "body": body})
+
+    async def gate(scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") == "/healthz":
+            return await app(scope, receive, send)
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
+        key = _key_from_headers(headers)
+        if not key:
+            log.info(json.dumps({"event": "auth", "status": "missing_key", "caller": "none"}))
+            return await _reply(send, 401, "A Baseline API key is required in the X-Api-Key "
+                                            "header (or Authorization: Bearer).")
+        valid = await _key_is_valid(key)
+        if valid is None:
+            log.info(json.dumps({"event": "auth", "status": "api_unreachable",
+                                 "caller": _caller_id(key)}))
+            return await _reply(send, 503, "The Baseline API could not be reached to check the "
+                                            "key. Try again shortly.")
+        if not valid:
+            log.info(json.dumps({"event": "auth", "status": "invalid_key", "caller": _caller_id(key)}))
+            return await _reply(send, 401, "That Baseline API key is not valid.")
+        return await app(scope, receive, send)
+    return gate
+
+
 def main():
-    mcp.run()
+    """stdio (default: the local connector, unchanged) or http (the hosted server, Part D)."""
+    import argparse
+    parser = argparse.ArgumentParser(prog="baseline-mcp")
+    parser.add_argument("--transport", choices=("stdio", "http"),
+                        default=os.environ.get("BASELINE_MCP_TRANSPORT", "stdio"))
+    parser.add_argument("--host", default=os.environ.get("BASELINE_MCP_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("BASELINE_MCP_PORT", "8765")))
+    args = parser.parse_args()
+
+    if args.transport == "stdio":
+        mcp.run()
+        return
+
+    global _REMOTE
+    _REMOTE = True
+    # One JSON object per line on stdout (journald). The mcp library installs its own "rich"
+    # handler on the root logger, which wraps lines; this logger bypasses it.
+    import sys
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log.handlers[:] = [handler]
+    log.setLevel(logging.INFO)
+    log.propagate = False
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if BASELINE_API_KEY:
+        log.warning(json.dumps({"event": "startup", "note": "BASELINE_API_KEY is set but ignored "
+                                "in http mode; every call uses its caller's key"}))
+    from mcp.server.transport_security import TransportSecuritySettings
+    public_hosts = [h.strip() for h in os.environ.get(
+        "BASELINE_MCP_PUBLIC_HOSTS", "mcp.baselinecontext.com").split(",") if h.strip()]
+    mcp.settings.transport_security = TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"] + public_hosts,
+        allowed_origins=["http://127.0.0.1:*", "http://localhost:*"]
+        + [f"https://{h}" for h in public_hosts] + ["https://claude.ai"],
+    )
+    # Stateless: no session survives in memory, so a restart or reboot costs callers nothing.
+    mcp.settings.stateless_http = True
+    import uvicorn
+    uvicorn.run(_auth_gate(mcp.streamable_http_app()), host=args.host, port=args.port,
+                log_level="warning", access_log=False,
+                proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 
 if __name__ == "__main__":
