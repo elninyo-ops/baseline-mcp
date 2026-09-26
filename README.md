@@ -137,6 +137,17 @@ claude mcp add baseline \
 
 **Cursor** — `.cursor/mcp.json`, same shape as above.
 
+**As an HTTP server** (streamable HTTP, for hosting behind a reverse proxy):
+
+```bash
+BASELINE_API_URL=https://api.baselinecontext.com baseline-mcp --transport http --port 8765
+```
+
+It serves `/mcp` on 127.0.0.1 and holds no key of its own: every request must carry the caller's
+key in an `X-Api-Key` (or `Authorization: Bearer`) header, and each tool call is made with that
+key, so it counts against that key's own quota. A request without a valid key gets a 401. The
+default, `--transport stdio`, is the local server shown above.
+
 ## Contributing
 
 This package is a thin translation layer: no climate logic lives here, and every tool call is an
