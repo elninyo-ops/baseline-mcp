@@ -504,17 +504,28 @@ def _format_compare_result(data: dict) -> str:
         # snowy") reads as directly contradictory. Split rank_label onto its
         # own indented line so it can't be read as a continuation of the
         # numbered group ranking.
+        #
+        # Ties share a position and say so (P1-15); no position at all when the
+        # server withheld the group ranking (records ending on different dates).
+        tied_with = entry.get("tied_with") or []
+        position = "-" if rank is None else f"{rank}=" if tied_with else f"{rank}."
+        tie = f", tied with {', '.join(tied_with)}" if tied_with else ""
         if entry.get("percent_of_normal") is not None:
-            lines.append(
-                f"{rank}. {label}: {value} ({entry['percent_of_normal']}% of normal)"
-            )
+            versus = f" ({entry['percent_of_normal']}% of normal{tie})"
+        elif entry.get("departure_display") is not None:
+            versus = f" ({entry['departure_display']} vs. normal{tie})"
         else:
-            lines.append(
-                f"{rank}. {label}: {value} ({entry.get('departure_display')} vs. normal)"
-            )
+            # A value with nothing measured against past years (partial period, or a
+            # suppressed percent of normal): no "(None vs. normal)".
+            versus = f" ({tie[2:]})" if tie else ""
+        lines.append(f"{position} {label}: {value}{versus}")
         if rank_label:
-            lines.append(f"   Historically: {rank_label} on record here")
+            note = entry.get("rank_cluster_note")
+            lines.append(f"   Historically: {rank_label} on record here"
+                         + (f" — though {note}" if note else ""))
 
+    if comparison.get("confidence"):
+        lines.append(f"\nConfidence: {comparison['confidence']}")
     lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")
 
     lines.append("\n```json")
