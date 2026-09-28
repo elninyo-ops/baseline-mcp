@@ -889,8 +889,68 @@ def _auth_gate(app):
         if not valid:
             log.info(json.dumps({"event": "auth", "status": "invalid_key", "caller": _caller_id(key)}))
             return await _reply(send, 401, "That Baseline API key is not valid.")
-        return await app(scope, receive, send)
+        return await _logged_request(app, scope, receive, send, headers, _caller_id(key))
     return gate
+
+
+# P1-31 (2026-09-28): claude.ai's requests were getting HTTP 400s the server never explained -- the
+# MCP SDK answers some requests (an unsupported MCP-Protocol-Version header, a malformed body) before
+# any tool runs, so no tool log line exists for them. One line per request: the JSON-RPC method(s)
+# and id(s), the protocol-version header, whether a session id was sent, the status, and for an
+# error the SDK's own message. Never the params (they hold the user's question) or the key.
+_BODY_PEEK = 64 * 1024
+
+
+def _rpc_summary(body: bytes) -> tuple[list, list]:
+    try:
+        msg = json.loads(body.decode("utf-8", "replace")) if body else None
+    except ValueError:
+        return ["<unparseable>"], []
+    msgs = msg if isinstance(msg, list) else [msg] if isinstance(msg, dict) else []
+    methods = [m.get("method") or ("<response>" if "result" in m or "error" in m else "<none>")
+               for m in msgs if isinstance(m, dict)]
+    ids = [m.get("id") for m in msgs if isinstance(m, dict) and m.get("id") is not None]
+    return methods, ids
+
+
+def _error_message(body: bytes) -> str:
+    try:
+        data = json.loads(body.decode("utf-8", "replace"))
+        return str((data.get("error") or {}).get("message") or data.get("error") or "")[:240]
+    except (ValueError, AttributeError):
+        return body[:240].decode("utf-8", "replace")
+
+
+async def _logged_request(app, scope, receive, send, headers, caller):
+    t0 = time.monotonic()
+    body_seen = bytearray()
+    state = {"status": None, "err": bytearray()}
+
+    async def peek_receive():
+        message = await receive()
+        if message.get("type") == "http.request" and len(body_seen) < _BODY_PEEK:
+            body_seen.extend(message.get("body", b"")[: _BODY_PEEK - len(body_seen)])
+        return message
+
+    async def peek_send(message):
+        if message.get("type") == "http.response.start":
+            state["status"] = message.get("status")
+        elif (message.get("type") == "http.response.body" and (state["status"] or 0) >= 400
+              and len(state["err"]) < 1024):
+            state["err"].extend(message.get("body", b"")[:1024])
+        await send(message)
+
+    try:
+        return await app(scope, peek_receive, peek_send)
+    finally:
+        methods, ids = _rpc_summary(bytes(body_seen))
+        line = {"event": "http", "http_method": scope.get("method"), "status": state["status"],
+                "rpc": methods, "rpc_id": ids[:5], "pv": headers.get("mcp-protocol-version", ""),
+                "sid": bool(headers.get("mcp-session-id")), "ua": headers.get("user-agent", "")[:80],
+                "caller": caller, "ms": round((time.monotonic() - t0) * 1000)}
+        if (state["status"] or 0) >= 400:
+            line["error"] = _error_message(bytes(state["err"]))
+        log.info(json.dumps(line))
 
 
 def main():
