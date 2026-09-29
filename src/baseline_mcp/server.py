@@ -632,7 +632,14 @@ def _format_compare_result(data: dict) -> str:
             note = entry.get("rank_cluster_note")
             lines.append(f"   Historically: {rank_label} on record here"
                          + (f" — though {note}" if note else ""))
+        # The row's own caveats (2026-09-29): a far record cell, corrected rainfall. The same
+        # sentences a single-place answer about this location carries.
+        for row_note in entry.get("notes") or []:
+            lines.append(f"   Note: {row_note}")
 
+    if comparison.get("coverage_note"):
+        # The partial-period sentence (P1-14): printed, not left in the JSON block.
+        lines.append(f"\n{comparison['coverage_note']}")
     if comparison.get("confidence"):
         lines.append(f"\nConfidence: {comparison['confidence']}")
     lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")

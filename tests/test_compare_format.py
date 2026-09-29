@@ -51,3 +51,24 @@ def test_a_suppressed_percent_of_normal_no_longer_prints_none():
                    "percent_of_normal": None, "rank_label": "driest"}])
     assert "None" not in text
     assert "1. A: 0.02 in\n" in text
+
+
+def test_a_rows_notes_print_under_it():
+    """2026-09-29: a far record cell or corrected rainfall is stated on the row, not only in the JSON."""
+    note = "The nearest land in Baseline's record is 40 miles south of Galveston; these figures are for that point."
+    text = _text([
+        {"label": "Galveston", "status": "ok", "rank": 1, "value_display": "40.1 in", "percent_of_normal": 90.0,
+         "rank_label": "near average", "notes": [note]},
+        {"label": "Houston", "status": "ok", "rank": 2, "value_display": "38.0 in", "percent_of_normal": 85.0},
+    ])
+    lines = text.splitlines()
+    i = lines.index("1. Galveston: 40.1 in (90.0% of normal)")
+    assert lines[i + 2] == f"   Note: {note}"
+    assert "Note:" not in "\n".join(lines[i + 3:])
+
+
+def test_the_partial_period_note_is_printed():
+    text = _text([{"label": "Casper, WY", "status": "partial", "rank": 1, "value_display": "9.1 in",
+                   "percent_of_normal": 70.0}],
+                 coverage_note="The record covers 335 of the 360 days asked about.", confidence="low")
+    assert "The record covers 335 of the 360 days asked about." in text
