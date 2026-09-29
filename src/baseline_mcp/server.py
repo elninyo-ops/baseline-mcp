@@ -209,6 +209,25 @@ def _logged(tool):
     return wrapper
 
 
+_SCRUB = (
+    (re.compile(r"(apikey|api_key|key|token)=[^&\s'\"]+", re.I), r"\1=[redacted]"),
+    (re.compile(r"https?://[^\s'\"<>)]+"), "[address]"),
+    (re.compile(r"(?<![\w.])/(?:opt|root|home|Users|mnt|var|tmp|private)/[^\s'\"]+"), "[path]"),
+)
+
+
+def _scrub(text: str) -> str:
+    """No key, address or file path in anything relayed to a caller (P1-32). The caller's own key
+    is removed too, in case an upstream message ever echoed it."""
+    out = str(text)
+    own = _caller_key() if _REMOTE else BASELINE_API_KEY
+    if own and len(own) >= 8:
+        out = out.replace(own, "[redacted]")
+    for pattern, repl in _SCRUB:
+        out = pattern.sub(repl, out)
+    return out
+
+
 def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
     """POST to a Baseline API path. Raises RuntimeError with an actionable
     message on any failure — callers should catch this and hand it back to the
@@ -218,11 +237,17 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
         response = httpx.post(url, json=payload, headers=_headers(), timeout=timeout)
     except httpx.ConnectError as error:
         _call_status.set("unreachable")
-        raise RuntimeError(
-            f"Could not reach the Baseline API at {url}. Is the server running? ({error})"
-        )
+        # Hosted, the API is an internal address (http://127.0.0.1:5050) no caller should see, and
+        # the exception text adds nothing a caller can act on (P1-32, 2026-09-29). Locally (stdio)
+        # the URL is the user's own setting and helps them fix it.
+        log.warning(json.dumps({"event": "api_unreachable", "detail": str(error)[:300]}))
+        if _REMOTE:
+            raise RuntimeError("Baseline's service couldn't be reached just now. Try again shortly.")
+        raise RuntimeError(f"Could not reach the Baseline API at {url}. Is the server running?")
     except httpx.TimeoutException:
         _call_status.set("timeout")
+        if _REMOTE:
+            raise RuntimeError(f"Baseline took longer than {timeout:.0f}s to answer. Try again shortly.")
         raise RuntimeError(f"Baseline API at {url} timed out after {timeout:.0f}s.")
 
     if response.status_code >= 400:
@@ -253,7 +278,13 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
             detail = response.json().get("error", response.text)
         except Exception:
             detail = response.text
-        raise RuntimeError(f"Baseline API returned {response.status_code}: {detail}")
+        # The API's own messages are written for users (its 5xx ones are fixed text since P1-32);
+        # an HTML error page or anything else unexpected is not passed on.
+        if not isinstance(detail, str) or detail.lstrip().startswith("<") or len(detail) > 1200:
+            log.warning(json.dumps({"event": "api_error_body", "status": response.status_code,
+                                    "detail": str(detail)[:300]}))
+            detail = "Baseline couldn't answer this just now. Try again shortly."
+        raise RuntimeError(f"Baseline API returned {response.status_code}: {_scrub(detail)}")
 
     return response.json()
 
