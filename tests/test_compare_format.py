@@ -72,3 +72,23 @@ def test_the_partial_period_note_is_printed():
                    "percent_of_normal": 70.0}],
                  coverage_note="The record covers 335 of the 360 days asked about.", confidence="low")
     assert "The record covers 335 of the 360 days asked about." in text
+
+
+def test_the_water_year_note_is_said_first_and_no_row_prints_a_code():
+    """P1-49 (2026-10-01): "Casper WY: no data (requested_period_extends_beyond_archive)" reached users."""
+    from baseline_mcp.server import _format_compare_result
+    data = {"comparison": {
+        "n_locations": 2, "variable_label": "Precipitation", "period_label": "Water Year 2026",
+        "baseline_years": "1991–2025",
+        "period_note": "Water Year 2027 began October 1 and there isn't enough data yet; here's Water Year 2026, which just ended.",
+        "ranked": [
+            {"label": "Casper WY", "status": "not_available", "reason": "requested_period_extends_beyond_archive",
+             "reason_text": "the record doesn't reach this period yet (it publishes about a month behind)"},
+            {"label": "Old API row", "status": "not_available", "reason": "requested_period_extends_beyond_archive"},
+        ]}}
+    text = _format_compare_result(data)
+    prose = text.split("```json")[0]
+    assert prose.startswith("Water Year 2027 began October 1")
+    assert "requested_period_extends_beyond_archive" not in prose
+    assert "Casper WY: no data (the record doesn't reach this period yet" in prose
+    assert "Old API row: no data (there's no data for this place and period)" in prose

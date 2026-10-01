@@ -589,9 +589,17 @@ def _resolve_location(text: str) -> dict:
     return {"lat": data["lat"], "lon": data["lon"], "label": data.get("name", text)}
 
 
+_NO_DATA_GENERIC = "there's no data for this place and period"
+
+
 def _format_compare_result(data: dict) -> str:
     comparison = data.get("comparison", {})
-    lines = [
+    lines = []
+    if comparison.get("period_note"):
+        # Said first: why this period. "Water Year 2027 began October 1 and there isn't enough data
+        # yet; here's Water Year 2026, which just ended." (P1-49, 2026-10-01)
+        lines += [comparison["period_note"], ""]
+    lines += [
         f"Compared {comparison.get('n_locations')} locations — "
         f"{comparison.get('variable_label')}, {comparison.get('period_label')} "
         f"(vs. {comparison.get('baseline_years')} baseline)",
@@ -601,7 +609,9 @@ def _format_compare_result(data: dict) -> str:
     for entry in comparison.get("ranked", []):
         label = entry.get("label", "Unknown")
         if entry.get("status") not in ("ok", "partial"):
-            lines.append(f"- {label}: no data ({entry.get('reason', 'unknown error')})")
+            # Words, never the internal code (owner, 2026-10-01): the API sends reason_text; an
+            # older API that doesn't gets the generic sentence, not "requested_period_extends_...".
+            lines.append(f"- {label}: no data ({entry.get('reason_text') or _NO_DATA_GENERIC})")
             continue
 
         rank = entry.get("rank")
