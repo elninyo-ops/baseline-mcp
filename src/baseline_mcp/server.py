@@ -758,6 +758,7 @@ def compare_locations(
         if year:
             payload["year"] = year
 
+    unplaced: list = []
     if category:
         payload["category"] = category
     else:
@@ -782,10 +783,14 @@ def compare_locations(
                     resolved[i] = future.result()
                 except RuntimeError as error:
                     errors[i] = str(error)
-        first_error = next((error for error in errors if error is not None), None)
-        if first_error:
-            return first_error
-        payload["locations"] = resolved
+        # One entry that can't be placed no longer sinks the rest (owner, 2026-10-01): "Goshen County,
+        # WY" in a list of four failed the whole comparison. Compare what resolves, and say in words
+        # which entry was left out and why.
+        unplaced = [(locations[i], _plain_reason(errors[i])) for i in range(len(locations)) if errors[i]]
+        placed = [r for r in resolved if r is not None]
+        if len(placed) < 2:
+            return _unplaced_lines(unplaced, len(locations), compared=False)
+        payload["locations"] = placed
 
     try:
         data = _post("/api/compare", payload, timeout=COMPARE_TIMEOUT_SECONDS)
@@ -795,7 +800,22 @@ def compare_locations(
     if data.get("status") == "error":
         return data.get("error", "Unknown error from Baseline API.")
 
+    if unplaced:
+        return _unplaced_lines(unplaced, len(locations), compared=True) + "\n\n" + _format_compare_result(data)
     return _format_compare_result(data)
+
+
+def _plain_reason(error: str | None) -> str:
+    """The lookup's own sentence without the transport prefix ("Baseline API returned 400: ")."""
+    return re.sub(r"^Baseline API returned \d+:\s*", "", (error or "").strip()) or "it couldn't be found"
+
+
+def _unplaced_lines(unplaced: list, total: int, compared: bool) -> str:
+    head = (f"Left out of the comparison: {len(unplaced)} of the {total} places asked for couldn't be placed."
+            if compared else
+            f"No comparison: a comparison needs at least two places, and {len(unplaced)} of the {total} "
+            "asked for couldn't be placed.")
+    return "\n".join([head] + [f"- {text}: {reason}" for text, reason in unplaced])
 
 
 def _format_seasonal_result(data: dict) -> str:
