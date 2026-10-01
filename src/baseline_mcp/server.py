@@ -665,13 +665,18 @@ def compare_locations(
     year: int = 0,
     month: int = 0,
 ) -> str:
-    """Rank 2-10 places, or a named group, against each other on rainfall,
-    temperature or snowfall over the same past period (this water year, a
-    season, a month, or a ski season): each place's total or average, how far
-    it is from normal (percent of normal for rain and snow, degrees for
-    temperature), and where that period stands in its own record since 1991
-    ("near average", "3rd wettest"). Use it instead of asking about each place
-    separately: the ranking is computed by Baseline, not by your own arithmetic.
+    """Compare a region or a set of places on rainfall, temperature or snowfall
+    over the same past period (this water year, a season, a month, or a ski
+    season): 2-10 places such as towns across several counties, the farms or
+    properties in a portfolio (as "lat,lon"), or a named group of places. For
+    each place: its total or average, how far it is from normal (percent of
+    normal for rain and snow, degrees for temperature), where that period
+    stands in its own record since 1991 ("near average", "3rd wettest"), and
+    its rank against the others. Use it whenever a question is about more than
+    one place, for example whether an event was local or regional, or which
+    sites fared worst, instead of asking about each place separately: the
+    ranking is computed by Baseline, not by your own arithmetic. A county or
+    other area isn't a point: give a town in it, or coordinates.
 
     Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
     strings) OR `category` (a curated group name) — not both.
