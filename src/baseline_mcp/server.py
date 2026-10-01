@@ -389,12 +389,14 @@ def _format_context_result(data: dict) -> str:
 @_logged
 @_with_quota_note
 def get_climate_context(query: str) -> str:
-    """Get statistically rigorous weather and climate context for any location
-    on Earth (land only). Answers natural-language questions with 10-day
-    forecast data and historical percentile rankings against a 35-year ERA5
-    daily climatology (1991-2025, WMO 1991-2020 normals). Use this when you
-    need to know not just what conditions are or will be, but how unusual
-    they are relative to history.
+    """Past, recent and coming weather at a named place, measured against that
+    place's own record since 1991. Use it for how wet, dry, hot or cold a place
+    has been (this water year, last winter, a named month such as August 2026);
+    whether that, or the next 10 days, is unusual; where a period ranks in the
+    record ("2nd driest since 1991"); and how it compares with the 1991-2020
+    normal. Answers are computed from ERA5-Land reanalysis (daily, about 10 km,
+    land only) and Open-Meteo forecasts, not from news or web pages, and they
+    state their own coverage.
 
     query MUST be phrased as a question in one of these forms (the location
     goes where LOCATION is shown; the underlying parser matches these
@@ -439,10 +441,12 @@ def get_climate_context(query: str) -> str:
 @_logged
 @_with_quota_note
 def get_context_for_coordinates(latitude: float, longitude: float, label: str = "") -> str:
-    """Get 10-day forecast and 35-year historical climate context for exact
-    coordinates. Use when you have a specific latitude/longitude (a
-    property, field, trailhead, or site) rather than a place name — this
-    skips geocoding entirely. Land locations only.
+    """The next 10 days at an exact latitude and longitude (a field, property,
+    trailhead or site), each day ranked against the same calendar day in every
+    year since 1991 ("warmest October 5 since 1991"), plus where the water year
+    stands there. Takes coordinates only, not a question, and skips place-name
+    lookup. Land only. For a past period at a point, ask get_climate_context
+    with the coordinates in the question.
 
     Baseline Climate states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
@@ -485,13 +489,13 @@ def _parse_coords(text: str):
 @_logged
 @_with_quota_note
 def get_water_year_status(location: str) -> str:
-    """Get water year precipitation and temperature status for a location:
-    totals since the start of the water/calendar year (Oct 1 for North
-    America, Jan 1 elsewhere), percentile rank against the same period
-    across 35 historical years, and whether conditions are notably wet,
-    dry, warm, or cold. Built for drought monitoring, water resource,
-    agricultural, and fire-planning contexts. location can be a place name
-    ("Casper WY") or "lat,lon" coordinates.
+    """How wet or dry, and warm or cold, a place has been so far this water year
+    (from October 1 in North America; from January 1 elsewhere): totals,
+    percent of normal, and the year's rank against the same span of every year
+    since 1991 ("2nd driest since 1991"). The record publishes about a month
+    behind, so in October it answers the water year just ended and says so.
+    For drought, water supply, range, crop and fire questions. location can be
+    a place name ("Casper WY") or "lat,lon" coordinates.
 
     Baseline Climate states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
@@ -527,13 +531,11 @@ def get_water_year_status(location: str) -> str:
 @_logged
 @_with_quota_note
 def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
-    """Compare the forecast for the next few days at a location to 35-year
-    historical normals. Returns percentile rankings, not vague comparisons.
-    Use for questions like "is this week unusually warm" or "will this
-    weekend be wetter than normal". The forecast reaches 10 days ahead, so
-    time_window must be near-term: a window further out ("this month",
-    "this winter") is declined, and a past period ("last month", "this
-    water year") is a question for get_climate_context instead.
+    """Is the coming week unusually warm, cold, wet or dry? Ranks the forecast
+    for the next few days (up to 10) at a place against the same days in every
+    year since 1991, as percentiles and departures from normal. Forecast only:
+    past weather ("last month", "this water year") is a question for
+    get_climate_context, and windows beyond 10 days are declined.
     variable must be "temperature" or "precipitation". time_window is
     optional free text for a near-term window (e.g. "today", "tomorrow",
     "this weekend", "this week", "the next 10 days") — defaults to
@@ -663,12 +665,13 @@ def compare_locations(
     year: int = 0,
     month: int = 0,
 ) -> str:
-    """Compare precipitation, temperature, or snowfall across 2-10 locations
-    in a single ranked comparison, computed directly by Baseline. Use this
-    instead of calling get_climate_context or get_water_year_status once per
-    location and comparing the answers yourself — the ranking and
-    percent-of-normal figures in the result come from Baseline, not from
-    your own arithmetic over several separate answers.
+    """Rank 2-10 places, or a named group, against each other on rainfall,
+    temperature or snowfall over the same past period (this water year, a
+    season, a month, or a ski season): each place's total or average, how far
+    it is from normal (percent of normal for rain and snow, degrees for
+    temperature), and where that period stands in its own record since 1991
+    ("near average", "3rd wettest"). Use it instead of asking about each place
+    separately: the ranking is computed by Baseline, not by your own arithmetic.
 
     Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
     strings) OR `category` (a curated group name) — not both.
@@ -792,8 +795,11 @@ def get_seasonal_outlook(
     variables: list[str] | None = None,
     season: str = "",
 ) -> str:
-    """Seasonal (three-month) outlook for a location: calibrated probabilities that the
-    season will be below, near or above normal, for temperature, precipitation, or both.
+    """Odds that the coming three-month season at a place will be warmer or cooler,
+    wetter or drier than normal: calibrated probabilities for below, near and above
+    normal, from ECMWF's SEAS5 seasonal forecast, with how well the outlook has tested
+    at that place and season. A season-ahead outlook, not a 10-day forecast and not a
+    record of past weather.
 
     This is a three-month climate outlook, not a weather forecast. For conditions over the
     next ten days, or for how unusual recent weather has been, use get_climate_context.
