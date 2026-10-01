@@ -57,6 +57,41 @@ _SEASONAL_PROVENANCE_LINE = (
     "Global Unified gauge analysis (precipitation) | Recent-record figures: ERA5-Land"
 )
 
+def _record_years_used(data: dict):
+    """(years used, first year, last year) of the record an answer was ranked against, or None.
+
+    A past period carries its count in temporal_stats.historical; a forecast carries one per day
+    (the fewest is what the answer can claim). Water Year 1991 starts before the archive does, so a
+    water-year answer ranks against 34 years, not 35."""
+    ts = data.get("temporal_stats") or {}
+    hist, fresh = ts.get("historical") or {}, ts.get("data_freshness") or {}
+    if isinstance(hist.get("count"), int):
+        return hist["count"], fresh.get("baseline_start_year"), fresh.get("baseline_end_year")
+    counts = [((d.get("signals") or {}).get("baseline_record_count"),
+               (d.get("signals") or {}).get("baseline_start_year"),
+               (d.get("signals") or {}).get("baseline_end_year"))
+              for d in data.get("days") or [] if isinstance(d, dict)]
+    counts = [c for c in counts if isinstance(c[0], int)]
+    return min(counts) if counts else None
+
+
+def _context_provenance_line(data: dict) -> str:
+    """The source line under a context answer, true to what that answer used (owner, 2026-10-01):
+    - a seasonal answer (get_climate_context answers those too) names SEAS5, not ERA5-Land/Open-Meteo;
+    - the "35-yr" claim becomes the real count when fewer years were used. Unknown: the standard line."""
+    if (data.get("short_answer") or {}).get("title") == "Seasonal Outlook":
+        return _SEASONAL_PROVENANCE_LINE
+    used = _record_years_used(data)
+    if used:
+        n, start, end = used
+        start, end = start or 1991, end or 2025
+        span = end - start + 1
+        if n < span:
+            return (f"Source: Baseline | ERA5-Land reanalysis {start}-{end} ({n} of the {span} years "
+                    "used, WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo")
+    return _PROVENANCE_LINE
+
+
 mcp = FastMCP("Baseline")
 
 
@@ -376,7 +411,7 @@ def _format_context_result(data: dict) -> str:
     # instruction might.
     lines.extend(_assessment_lines(data))
 
-    lines.append(f"\n{_PROVENANCE_LINE}")
+    lines.append(f"\n{_context_provenance_line(data)}")
 
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
