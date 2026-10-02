@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Refuse a commit whose added lines look like a key, token or password, or that adds a .env file
+(owner, 2026-10-02: launch_telegram_bot.sh carried 11 secrets into this history on 14 July).
+
+Enable once per clone:   git config core.hooksPath .githooks
+A deliberate false positive can be allowed on its line with:  # secret-scan: allow
+Never prints the matched value: only the file, line number and the kind of match."""
+import re
+import subprocess
+import sys
+
+PATTERNS = [
+    ("Anthropic key", r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    ("OpenAI key", r"\bsk-(?:proj-)?[A-Za-z0-9_\-]{32,}"),
+    ("Supabase key", r"\bsb_(?:secret|publishable)_[A-Za-z0-9_\-]{10,}"),
+    ("JWT", r"\beyJ[A-Za-z0-9_\-]{15,}\.eyJ[A-Za-z0-9_\-]{10,}"),
+    ("AWS-style access key", r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    ("GitHub token", r"\bgh[pousr]_[A-Za-z0-9]{30,}"),
+    ("Slack/Telegram-style token", r"\b(?:xox[abpr]-[A-Za-z0-9-]{10,}|\d{8,10}:[A-Za-z0-9_\-]{35})\b"),
+    ("private key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    ("Postgres URL with a password", r"postgres(?:ql)?://[^:\s/]+:[^@\s]{6,}@"),
+    ("secret assigned a long value",
+     r"(?i)\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+=.]{20,}"),
+]
+RX = [(name, re.compile(rx)) for name, rx in PATTERNS]
+PLACEHOLDER = re.compile(r"(?i)(x{6,}|<[^>]+>|\.\.\.|example|placeholder|your[_-]|changeme|dummy|fake|not-a-secret|\$\{?[A-Z_]+\}?|os\.environ|getenv)")
+
+
+def staged_files():
+    out = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=AM"],
+                         capture_output=True, text=True).stdout
+    return [f for f in out.splitlines() if f]
+
+
+def main() -> int:
+    problems = []
+    for f in staged_files():
+        name = f.rsplit("/", 1)[-1]
+        if name == ".env" or (name.startswith(".env.") and not name.endswith((".example", ".sample"))) or name.endswith(".env"):
+            problems.append(f"{f}: an environment file; keep it out of git")
+            continue
+        diff = subprocess.run(["git", "diff", "--cached", "-U0", "--no-color", "--", f],
+                              capture_output=True, text=True, errors="replace").stdout
+        line_no = 0
+        for line in diff.splitlines():
+            m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)", line)
+            if m:
+                line_no = int(m.group(1)) - 1
+                continue
+            if not line.startswith("+") or line.startswith("+++"):
+                continue
+            line_no += 1
+            text = line[1:]
+            if "secret-scan: allow" in text:
+                continue
+            for kind, rx in RX:
+                hit = rx.search(text)
+                if hit and not PLACEHOLDER.search(hit.group(0)):
+                    problems.append(f"{f}:{line_no}: looks like a {kind}")
+                    break
+    if problems:
+        print("Commit refused: these added lines look like secrets (values not shown).", file=sys.stderr)
+        for p in problems:
+            print("  " + p, file=sys.stderr)
+        print("Remove them, or mark a deliberate false positive with '# secret-scan: allow'.", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
