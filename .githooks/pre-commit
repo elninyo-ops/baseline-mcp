@@ -4,6 +4,8 @@
 
 Enable once per clone:   git config core.hooksPath .githooks
 A deliberate false positive can be allowed on its line with:  # secret-scan: allow
+Placeholders pass only when the matched value is exactly one of ALLOWED_PLACEHOLDERS (owner,
+2026-10-04): a word like "example" or "fake" in or near a value no longer lets it through.
 Never prints the matched value: only the file, line number and the kind of match."""
 import re
 import subprocess
@@ -18,12 +20,25 @@ PATTERNS = [
     ("GitHub token", r"\bgh[pousr]_[A-Za-z0-9]{30,}"),
     ("Slack/Telegram-style token", r"\b(?:xox[abpr]-[A-Za-z0-9-]{10,}|\d{8,10}:[A-Za-z0-9_\-]{35})\b"),
     ("private key", r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
-    ("Postgres URL with a password", r"postgres(?:ql)?://[^:\s/]+:[^@\s]{6,}@"),
+    ("Postgres URL with a password", r"postgres(?:ql)?://[^:\s/]+:(?P<v>[^@\s]{6,})@"),
     ("secret assigned a long value",
-     r"(?i)\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*\s*[:=]\s*['\"]?[A-Za-z0-9_\-/+=.]{20,}"),
+     r"(?i)\b[A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*\s*[:=]\s*['\"]?(?P<v>[A-Za-z0-9_\-/+=.]{20,})"),
 ]
 RX = [(name, re.compile(rx)) for name, rx in PATTERNS]
-PLACEHOLDER = re.compile(r"(?i)(x{6,}|<[^>]+>|\.\.\.|example|placeholder|your[_-]|changeme|dummy|fake|not-a-secret|\$\{?[A-Z_]+\}?|os\.environ|getenv)")
+
+# Exact strings only, compared with the matched value (the password in a URL, the right-hand side of
+# an assignment, otherwise the whole match). Anything else that looks real is refused.
+ALLOWED_PLACEHOLDERS = {
+    "sk-ant-EXAMPLE",
+    "your-key-here", "your_key_here", "YOUR_KEY_HERE",
+    "your-api-key-here", "your_api_key_here", "YOUR_API_KEY_HERE",
+    "AKIAIOSFODNN7EXAMPLE",   # AWS's documented example key
+}
+
+
+def is_placeholder(match):
+    value = match.groupdict().get("v") or match.group(0)
+    return value.strip("'\"") in ALLOWED_PLACEHOLDERS
 
 
 def staged_files():
@@ -53,11 +68,9 @@ def main() -> int:
             text = line[1:]
             if "secret-scan: allow" in text:
                 continue
-            for kind, rx in RX:
-                hit = rx.search(text)
-                if hit and not PLACEHOLDER.search(hit.group(0)):
-                    problems.append(f"{f}:{line_no}: looks like a {kind}")
-                    break
+            kind = next((k for k, rx in RX for hit in rx.finditer(text) if not is_placeholder(hit)), None)
+            if kind:
+                problems.append(f"{f}:{line_no}: looks like a {kind}")
     if problems:
         print("Commit refused: these added lines look like secrets (values not shown).", file=sys.stderr)
         for p in problems:
