@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
 import time
 from functools import lru_cache
 
@@ -112,3 +114,59 @@ def account_for(claims: dict, now: float | None = None) -> str:
     if not acct.get("api_active", True):
         raise TokenRejected(401, "This account has no active access.")
     return account_id
+
+
+# The refused-registration alert, part 1 (baseline repo, docs/phase2_design_2026-10-01.md §17.16): one
+# JSON line on stderr (so in the MCP's journal) per 401 challenge and per first request that arrives
+# with a verified token, by client_id. tools/registration_alert.py in the baseline repo reads the last
+# 10 minutes every 5 and alerts when many challenges lead to few tokens: a client that can't register
+# never gets a token. Never the token, never an email, never the user id: event, client_id, minute.
+CHALLENGE_EVENT = "oauth_challenge"
+FIRST_TOKEN_EVENT = "oauth_token_first"
+_CLIENT_ID = re.compile(r"^[A-Za-z0-9_.:-]{1,80}$")
+_SEEN_CLIENTS: set = set()
+_SEEN_CLIENTS_MAX = 50_000                      # forgotten wholesale past this: a client logs "first" again
+
+
+def _minute(now: float | None = None) -> str:
+    return time.strftime("%Y-%m-%dT%H:%MZ", time.gmtime(time.time() if now is None else now))
+
+
+def _safe_client_id(value) -> str | None:
+    return value if isinstance(value, str) and _CLIENT_ID.match(value) else None
+
+
+def unverified_client_id(token: str) -> str | None:
+    """The client_id a rejected token claims, for the log only (its signature wasn't checked)."""
+    try:
+        import jwt
+        return _safe_client_id(jwt.decode(token, options={"verify_signature": False}).get("client_id"))
+    except Exception:
+        return None
+
+
+def log_event(event: str, client_id: str | None = None, reason: str | None = None,
+              now: float | None = None, stream=None) -> None:
+    line = {"event": event, "client_id": _safe_client_id(client_id), "ts": _minute(now)}
+    if reason:
+        line["reason"] = reason
+    out = stream or sys.stderr
+    out.write(json.dumps(line) + "\n")
+    out.flush()
+
+
+def log_challenge(reason: str, client_id: str | None = None) -> None:
+    """A 401 that carries WWW-Authenticate: no credential ("no_credential"), or a refused token."""
+    log_event(CHALLENGE_EVENT, client_id, reason)
+
+
+def log_token_seen(claims: dict) -> None:
+    """The first verified token from a client_id since the MCP started."""
+    client_id = _safe_client_id(claims.get("client_id"))
+    key = client_id or "<unknown>"
+    if key in _SEEN_CLIENTS:
+        return
+    if len(_SEEN_CLIENTS) >= _SEEN_CLIENTS_MAX:
+        _SEEN_CLIENTS.clear()
+    _SEEN_CLIENTS.add(key)
+    log_event(FIRST_TOKEN_EVENT, client_id)

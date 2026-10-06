@@ -1031,6 +1031,7 @@ def _auth_gate(app):
             log.info(json.dumps({"event": "auth", "status": "missing_key", "caller": "none"}))
             if oauth.enabled():
                 # What starts sign-in in Claude and ChatGPT (§13.3 case 3).
+                oauth.log_challenge("no_credential")
                 return await _reply(send, 401, "Sign in to Baseline, or send a Baseline API key in the "
                                                 "X-Api-Key header (or Authorization: Bearer).",
                                     oauth.www_authenticate())
@@ -1038,10 +1039,14 @@ def _auth_gate(app):
                                             "header (or Authorization: Bearer).")
         if oauth.enabled() and oauth.looks_like_jwt(key):
             try:
-                account = oauth.account_for(oauth.verify(key))
+                claims = oauth.verify(key)
+                oauth.log_token_seen(claims)        # the registration and sign-in worked (§17.16)
+                account = oauth.account_for(claims)
             except oauth.TokenRejected as rejected:
                 log.info(json.dumps({"event": "auth", "status": "token_rejected", "caller": "oauth",
                                      "reason": rejected.error}))
+                if rejected.status == 401:
+                    oauth.log_challenge(rejected.error, oauth.unverified_client_id(key))
                 return await _reply(send, rejected.status, rejected.message,
                                     oauth.www_authenticate(rejected.error) if rejected.status == 401 else None)
             scope["baseline_account"] = account
