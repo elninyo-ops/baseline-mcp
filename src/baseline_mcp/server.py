@@ -25,6 +25,8 @@ import httpx
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
+from baseline_mcp import oauth
+
 load_dotenv()
 
 BASELINE_API_URL = os.environ.get("BASELINE_API_URL", "http://127.0.0.1:5050").rstrip("/")
@@ -134,19 +136,25 @@ def _local_reset(reset_at: str | None, now: datetime | None = None) -> str:
     return f"at {clock} {reset.tzname()} {day} (in {wait})"
 
 
+def _quota_subject(verb: str | None = None) -> str:
+    """'this key' on the key path, 'your account' for a signed-in caller (§13.2 point 4)."""
+    subject = "your account" if _caller_account() else "this key"
+    return f"{subject} {verb}" if verb else subject
+
+
 def _quota_note(quota: dict | None, first_call: bool) -> str:
     if not quota:
         return ""
     limit, remaining = quota["limit"], quota["remaining"]
     when = _local_reset(quota["reset_at"])
     if remaining == 0:
-        return (f"Baseline quota: that was the last of today's {limit} questions on this key. "
+        return (f"Baseline quota: that was the last of today's {limit} questions on {_quota_subject()}. "
                 f"It resets {when}. Tell the user.")
     if remaining < limit * _LOW_QUOTA_FRACTION:
-        return (f"Baseline quota: {remaining} of {limit} questions left today on this key; "
+        return (f"Baseline quota: {remaining} of {limit} questions left today on {_quota_subject()}; "
                 f"resets {when}. Tell the user.")
     if first_call:
-        return (f"Baseline quota: this key allows {limit} questions a day, and {remaining} are "
+        return (f"Baseline quota: {_quota_subject('allows')} {limit} questions a day, and {remaining} are "
                 f"left today. The count resets {when}. Mention this to the user once.")
     return ""
 
@@ -162,7 +170,8 @@ def _with_quota_note(tool):
             quota = _call_quota.get()
         finally:
             _call_quota.reset(token)
-        caller = _caller_id(_caller_key())
+        account = _caller_account()
+        caller = f"acct:{account[:8]}" if account else _caller_id(_caller_key())
         with _intro_lock:
             first_call = quota is not None and caller not in _intro_shown_for
             if first_call:
@@ -192,15 +201,27 @@ def _key_from_headers(headers) -> str:
     return key
 
 
+def _current_request():
+    from mcp.server.lowlevel.server import request_ctx
+    try:
+        return request_ctx.get().request
+    except LookupError:
+        return None
+
+
 def _caller_key() -> str:
     if not _REMOTE:
         return BASELINE_API_KEY
-    from mcp.server.lowlevel.server import request_ctx
-    try:
-        request = request_ctx.get().request
-    except LookupError:
-        return ""
+    request = _current_request()
     return _key_from_headers(request.headers) if request is not None else ""
+
+
+def _caller_account() -> str | None:
+    """The account a signed-in (OAuth) caller was mapped to by the gate, or None on the key path."""
+    if not _REMOTE:
+        return None
+    request = _current_request()
+    return (request.scope.get("baseline_account") if request is not None else None) or None
 
 
 def _caller_id(key: str) -> str:
@@ -211,6 +232,12 @@ def _caller_id(key: str) -> str:
 
 def _headers() -> dict:
     headers = {"Content-Type": "application/json"}
+    account = _caller_account()
+    if account:
+        # Token path (§13.2): the MCP's own service key plus the account. The token never leaves here.
+        headers["X-Api-Key"] = oauth.SERVICE_KEY
+        headers["X-Baseline-Account"] = account
+        return headers
     key = _caller_key()
     if key:
         headers["X-Api-Key"] = key
@@ -950,6 +977,15 @@ def get_seasonal_outlook(
     return _format_seasonal_result(data)
 
 
+@mcp.custom_route(oauth.METADATA_PATH, methods=["GET"])
+async def _protected_resource_metadata(request):
+    """RFC 9728: where to sign in. Open, like /healthz. 404 until OAuth is turned on."""
+    from starlette.responses import JSONResponse
+    if not oauth.enabled():
+        return JSONResponse({"error": "Sign-in is not enabled on this server."}, status_code=404)
+    return JSONResponse(oauth.protected_resource_metadata())
+
+
 @mcp.custom_route("/healthz", methods=["GET"])
 async def _healthz(request):
     """Liveness only, no key needed; says nothing about the Baseline API behind it."""
@@ -987,22 +1023,43 @@ async def _key_is_valid(key: str) -> bool | None:
 def _auth_gate(app):
     """ASGI gate in front of the MCP app in remote mode: a request with no key, or a key the
     Baseline API does not know, gets a plain 401 before any MCP handling. /healthz is open."""
-    async def _reply(send, status: int, message: str):
+    async def _reply(send, status: int, message: str, challenge: str | None = None):
         body = json.dumps({"error": message}).encode()
-        await send({"type": "http.response.start", "status": status,
-                    "headers": [(b"content-type", b"application/json"),
-                                (b"content-length", str(len(body)).encode())]})
+        head = [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())]
+        if challenge:
+            head.append((b"www-authenticate", challenge.encode()))
+        await send({"type": "http.response.start", "status": status, "headers": head})
         await send({"type": "http.response.body", "body": body})
 
     async def gate(scope, receive, send):
-        if scope["type"] != "http" or scope.get("path") == "/healthz":
+        if scope["type"] != "http" or scope.get("path") in ("/healthz", oauth.METADATA_PATH):
             return await app(scope, receive, send)
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
         key = _key_from_headers(headers)
         if not key:
             log.info(json.dumps({"event": "auth", "status": "missing_key", "caller": "none"}))
+            if oauth.enabled():
+                # What starts sign-in in Claude and ChatGPT (§13.3 case 3).
+                oauth.log_challenge("no_credential")
+                return await _reply(send, 401, "Sign in to Baseline, or send a Baseline API key in the "
+                                                "X-Api-Key header (or Authorization: Bearer).",
+                                    oauth.www_authenticate())
             return await _reply(send, 401, "A Baseline API key is required in the X-Api-Key "
                                             "header (or Authorization: Bearer).")
+        if oauth.enabled() and oauth.looks_like_jwt(key):
+            try:
+                claims = oauth.verify(key)
+                oauth.log_token_seen(claims)        # the registration and sign-in worked (§17.16)
+                account = oauth.account_for(claims)
+            except oauth.TokenRejected as rejected:
+                log.info(json.dumps({"event": "auth", "status": "token_rejected", "caller": "oauth",
+                                     "reason": rejected.error}))
+                if rejected.status == 401:
+                    oauth.log_challenge(rejected.error, oauth.unverified_client_id(key))
+                return await _reply(send, rejected.status, rejected.message,
+                                    oauth.www_authenticate(rejected.error) if rejected.status == 401 else None)
+            scope["baseline_account"] = account
+            return await _logged_request(app, scope, receive, send, headers, f"acct:{account[:8]} via=oauth")
         valid = await _key_is_valid(key)
         if valid is None:
             log.info(json.dumps({"event": "auth", "status": "api_unreachable",
