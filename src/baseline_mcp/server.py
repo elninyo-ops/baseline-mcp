@@ -385,6 +385,9 @@ def _format_context_result(data: dict) -> str:
         title = short_answer.get("title") or "Short Answer"
         answer = short_answer.get("answer") or ""
         lines.append(f"\n{title}: {answer}")
+    # The trust line (owner-approved 2026-10-02): directly under the headline, always.
+    if data.get("trust_line"):
+        lines.append(data["trust_line"])
 
     summary = data.get("summary")
     if summary:
@@ -649,6 +652,8 @@ def _format_compare_result(data: dict) -> str:
             # Words, never the internal code (owner, 2026-10-01): the API sends reason_text; an
             # older API that doesn't gets the generic sentence, not "requested_period_extends_...".
             lines.append(f"- {label}: no data ({entry.get('reason_text') or _NO_DATA_GENERIC})")
+            if entry.get("trust_line"):
+                lines.append(f"   {entry['trust_line']}")
             continue
 
         rank = entry.get("rank")
@@ -683,6 +688,8 @@ def _format_compare_result(data: dict) -> str:
         # sentences a single-place answer about this location carries.
         for row_note in entry.get("notes") or []:
             lines.append(f"   Note: {row_note}")
+        if entry.get("trust_line"):
+            lines.append(f"   {entry['trust_line']}")
 
     if comparison.get("coverage_note"):
         # The partial-period sentence (P1-14): printed, not left in the JSON block.
@@ -839,6 +846,8 @@ def _format_seasonal_result(data: dict) -> str:
     short_answer = data.get("short_answer") or {}
     if short_answer.get("answer"):
         lines.append(f"\nSeasonal outlook: {short_answer['answer']}")
+        if data.get("trust_line"):
+            lines.append(data["trust_line"])
         if short_answer.get("confidence"):
             lines.append(f"\nConfidence: {short_answer['confidence']}")
 
