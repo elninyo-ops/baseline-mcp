@@ -682,7 +682,11 @@ def _format_compare_result(data: dict) -> str:
         lines.append(f"{position} {label}: {value}{versus}")
         if rank_label:
             note = entry.get("rank_cluster_note")
-            lines.append(f"   Historically: {rank_label} on record here"
+            # "on record" only when the ranking used the whole record (owner, 2026-10-19): the API sends
+            # rank_scope, "of the 9 winters compared here — not the full 34-winter record" when it didn't.
+            # An API without it (before 10d.1) is answered as before.
+            scope = entry.get("rank_scope") or "on record here"
+            lines.append(f"   Historically: {rank_label} {scope}"
                          + (f" — though {note}" if note else ""))
         # The row's own caveats (2026-09-29): a far record cell, corrected rainfall. The same
         # sentences a single-place answer about this location carries.
