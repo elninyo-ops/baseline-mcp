@@ -81,15 +81,34 @@ def _context_provenance_line(data: dict) -> str:
     - the "35-yr" claim becomes the real count when fewer years were used. Unknown: the standard line."""
     if (data.get("short_answer") or {}).get("title") == "Seasonal Outlook":
         return _SEASONAL_PROVENANCE_LINE
+    line = _PROVENANCE_LINE
     used = _record_years_used(data)
     if used:
         n, start, end = used
         start, end = start or 1991, end or 2025
         span = end - start + 1
         if n < span:
-            return (f"Source: Baseline | ERA5-Land reanalysis {start}-{end} ({n} of the {span} years "
+            line = (f"Source: Baseline | ERA5-Land reanalysis {start}-{end} ({n} of the {span} years "
                     "used, WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo")
-    return _PROVENANCE_LINE
+    return _with_snowfall_source(line, data)
+
+
+def _with_snowfall_source(line: str, data: dict) -> str:
+    """An answer with snowfall names where snowfall comes from (owner, 2026-10-20): ERA5 via Open-Meteo at
+    0.25 degree, with the snowfall data's own latest date. Snowfall alone: that source only (the line named
+    ERA5-Land, which snowfall never came from). With rain or temperature too: both, each with its date."""
+    ts = data.get("temporal_stats") or {}
+    signals, fresh = ts.get("signals") or {}, ts.get("data_freshness") or {}
+    if "snowfall" not in signals:
+        return line
+    snow_date = fresh.get("snowfall_latest_available_date")
+    snow = "Snowfall: ERA5 via Open-Meteo, 0.25-degree resolution" + (f", data through {snow_date}" if snow_date else "")
+    forecast = " | Forecast: Open-Meteo"
+    if not {"precipitation", "temperature"} & set(signals):
+        return f"Source: Baseline | {snow}{forecast}"
+    tiles_date = fresh.get("latest_available_date")
+    through = f", data through {tiles_date}" if tiles_date else ""
+    return line.replace(forecast, f"{through} | {snow}{forecast}", 1)
 
 
 mcp = FastMCP("Baseline")
@@ -698,6 +717,9 @@ def _format_compare_result(data: dict) -> str:
     if comparison.get("coverage_note"):
         # The partial-period sentence (P1-14): printed, not left in the JSON block.
         lines.append(f"\n{comparison['coverage_note']}")
+    if comparison.get("amounts_note"):
+        # With every snowfall total (owner, 2026-10-20): model amounts run below stations' measurements.
+        lines.append(f"\n{comparison['amounts_note']}")
     if comparison.get("confidence"):
         lines.append(f"\nConfidence: {comparison['confidence']}")
     lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")
