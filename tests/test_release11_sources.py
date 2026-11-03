@@ -39,6 +39,17 @@ def test_context_without_sources_prints_only_the_credits_line():
     assert "Data details" not in head and "Source: Baseline" not in head
 
 
+def test_a_still_working_reply_prints_no_source_line():
+    """Owner, 2026-11-03 (release 11 tier 3): the API's 202 "Still working" reply shows no data, so it names no
+    source -- neither the old line nor the bare credits line. The answer a minute later carries its own lines."""
+    data = {"status": "processing",
+            "short_answer": {"show": True, "title": "Still working", "answer": "Still working on this one."},
+            "summary": "Still working on this one."}
+    head = _head(_format_context_result(data))
+    assert "Sources:" not in head and "Data details" not in head and "Source: Baseline" not in head
+    assert head.endswith("Overview: Still working on this one.")
+
+
 def test_compare_prints_the_comparisons_sources():
     data = {"status": "ok", "comparison": {
         "period_label": "Water Year 2026", "n_locations": 1, "variable_label": "Precipitation",
