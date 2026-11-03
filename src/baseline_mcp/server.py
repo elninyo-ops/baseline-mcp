@@ -395,7 +395,10 @@ def _format_context_result(data: dict) -> str:
     # instruction might.
     lines.extend(_assessment_lines(data))
 
-    lines.append("\n" + "\n".join(_source_lines(data.get("sources"))))
+    # A "Still working" reply (the API's 202, status "processing") shows no data, so it names no source (owner,
+    # 2026-11-03, release 11 tier 3). The answer a minute later carries its own lines.
+    if data.get("status") != "processing":
+        lines.append("\n" + "\n".join(_source_lines(data.get("sources"))))
 
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
