@@ -23,6 +23,9 @@
   - `README.md`, `METHODOLOGY.md`, `CONTRIBUTING.md`, `server.json` and the `pyproject.toml` homepage now say
     Hoodoo Weather and give the hoodoowx.com addresses.
   - The README's tool list gains `get_seasonal_outlook`.
+  - `server.json`: checked 2 of 2 changed entries. They are its one `packages` entry, seen by the gate as one
+    removed and one added. The only change is the two environment-variable descriptions, "Baseline API" →
+    "Hoodoo API". The name, version, identifier and variable names are unchanged.
   - Kept: the repo, package, command, module and registry names, and the `BASELINE_*` variables (owner D9).
 - **Tests:**
   - New: `test_release11_names.py`, `test_release11_sources.py`, `data/tested_descriptions.json`.
