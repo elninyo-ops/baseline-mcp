@@ -1,7 +1,7 @@
 # Contributing
 
 `baseline-mcp` is a thin translation layer. **No climate logic lives here** — every tool call is
-an HTTP request to the Baseline Climate API, and rankings, station cross-checks and outlook
+an HTTP request to the Hoodoo Weather API, and rankings, station cross-checks and outlook
 calibration all happen server-side. A change to what an answer *says* almost always belongs in the
 API, not in this package.
 

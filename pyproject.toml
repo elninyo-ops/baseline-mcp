@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://baselinecontext.com"
+Homepage = "https://hoodoowx.com"
 Repository = "https://github.com/elninyo-ops/baseline-mcp"
 Documentation = "https://github.com/elninyo-ops/baseline-mcp/blob/main/METHODOLOGY.md"
 Issues = "https://github.com/elninyo-ops/baseline-mcp/issues"

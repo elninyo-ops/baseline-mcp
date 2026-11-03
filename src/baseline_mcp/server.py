@@ -1,11 +1,11 @@
-"""Baseline MCP server.
+"""Hoodoo MCP server.
 
-Thin translation layer between the MCP protocol and the Baseline HTTP API.
-Contains zero Baseline logic — every tool is a POST to the Baseline API and
+Thin translation layer between the MCP protocol and the Hoodoo HTTP API.
+Contains zero Hoodoo logic — every tool is a POST to the Hoodoo API and
 a reformat of the JSON response into agent-readable text. If a feature needs
-new climate logic, it belongs in Baseline, not here.
+new climate logic, it belongs in Hoodoo, not here.
 
-See baseline_mcp_server_plan.md (companion doc, in the Baseline project dir)
+See baseline_mcp_server_plan.md (companion doc, in the Hoodoo project dir)
 for the full design rationale.
 """
 
@@ -42,76 +42,38 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 # category can still take ~100s+; this timeout keeps real margin above that.
 COMPARE_TIMEOUT_SECONDS = 240.0
 
-_PROVENANCE_LINE = (
-    "Source: Baseline | ERA5-Land reanalysis 1991-2025 (35-yr daily climatology, "
-    "WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo"
-)
+# The source lines (release 11; API repo docs/release_11_rename_design.md §2.3). The API builds them once
+# (source_lines.py) and sends them as `sources`; the connector only prints them, so the two can't disagree.
+# This replaces the connector's own "Source: Baseline | ..." builders, which named sources an answer had
+# not used ("Forecast: Open-Meteo" on past-only answers). An API that sends no `sources` (only during a
+# deploy gap) gets this line alone: nothing the connector can't stand behind.
+FALLBACK_SOURCES_LINE = "Sources: Full credits: https://hoodoowx.com/data-sources"
 
-# The seasonal outlook comes from somewhere else entirely, and the line above would
-# misattribute it: no ERA5-Land, no Open-Meteo, a different forecast system and different
-# verifying observations per variable. A provenance line that names the wrong sources is
-# worse than none, because it reads as precision.
-_SEASONAL_PROVENANCE_LINE = (
-    "Source: Baseline | Seasonal outlook: ECMWF SEAS5 (system 51), calibrated per box "
-    "against 1981-2016 observations | Verified against GHCN_CAMS (temperature) and CPC "
-    "Global Unified gauge analysis (precipitation) | Recent-record figures: ERA5-Land"
-)
-
-def _record_years_used(data: dict):
-    """(years used, first year, last year) of the record an answer was ranked against, or None.
-
-    A past period carries its count in temporal_stats.historical; a forecast carries one per day
-    (the fewest is what the answer can claim). Water Year 1991 starts before the archive does, so a
-    water-year answer ranks against 34 years, not 35."""
-    ts = data.get("temporal_stats") or {}
-    hist, fresh = ts.get("historical") or {}, ts.get("data_freshness") or {}
-    if isinstance(hist.get("count"), int):
-        return hist["count"], fresh.get("baseline_start_year"), fresh.get("baseline_end_year")
-    counts = [((d.get("signals") or {}).get("baseline_record_count"),
-               (d.get("signals") or {}).get("baseline_start_year"),
-               (d.get("signals") or {}).get("baseline_end_year"))
-              for d in data.get("days") or [] if isinstance(d, dict)]
-    counts = [c for c in counts if isinstance(c[0], int)]
-    return min(counts) if counts else None
+# The public names the hosted server answers to (DNS-rebinding protection refuses any other Host). Release 11
+# publishes mcp.hoodoowx.com; mcp.baselinecontext.com keeps working for at least 90 days after launch (owner).
+# A drop-in that sets BASELINE_MCP_PUBLIC_HOSTS replaces this list, so it must name both.
+DEFAULT_PUBLIC_HOSTS = "mcp.baselinecontext.com,mcp.hoodoowx.com"
 
 
-def _context_provenance_line(data: dict) -> str:
-    """The source line under a context answer, true to what that answer used (owner, 2026-10-01):
-    - a seasonal answer (get_climate_context answers those too) names SEAS5, not ERA5-Land/Open-Meteo;
-    - the "35-yr" claim becomes the real count when fewer years were used. Unknown: the standard line."""
-    if (data.get("short_answer") or {}).get("title") == "Seasonal Outlook":
-        return _SEASONAL_PROVENANCE_LINE
-    line = _PROVENANCE_LINE
-    used = _record_years_used(data)
-    if used:
-        n, start, end = used
-        start, end = start or 1991, end or 2025
-        span = end - start + 1
-        if n < span:
-            line = (f"Source: Baseline | ERA5-Land reanalysis {start}-{end} ({n} of the {span} years "
-                    "used, WMO 1991-2020 normals), 0.1-degree resolution, land-only | Forecast: Open-Meteo")
-    return _with_snowfall_source(line, data)
+def _public_hosts() -> list:
+    return [h.strip() for h in os.environ.get("BASELINE_MCP_PUBLIC_HOSTS", DEFAULT_PUBLIC_HOSTS).split(",")
+            if h.strip()]
 
 
-def _with_snowfall_source(line: str, data: dict) -> str:
-    """An answer with snowfall names where snowfall comes from (owner, 2026-10-20): ERA5 via Open-Meteo at
-    0.25 degree, with the snowfall data's own latest date. Snowfall alone: that source only (the line named
-    ERA5-Land, which snowfall never came from). With rain or temperature too: both, each with its date."""
-    ts = data.get("temporal_stats") or {}
-    signals, fresh = ts.get("signals") or {}, ts.get("data_freshness") or {}
-    if "snowfall" not in signals:
-        return line
-    snow_date = fresh.get("snowfall_latest_available_date")
-    snow = "Snowfall: ERA5 via Open-Meteo, 0.25-degree resolution" + (f", data through {snow_date}" if snow_date else "")
-    forecast = " | Forecast: Open-Meteo"
-    if not {"precipitation", "temperature"} & set(signals):
-        return f"Source: Baseline | {snow}{forecast}"
-    tiles_date = fresh.get("latest_available_date")
-    through = f", data through {tiles_date}" if tiles_date else ""
-    return line.replace(forecast, f"{through} | {snow}{forecast}", 1)
+def _source_lines(sources: dict | None) -> list:
+    """The lines under an answer, in order: "Data details:", "Sources:", the station line, the CHIRPS line."""
+    sources = sources if isinstance(sources, dict) else {}
+    out = []
+    if sources.get("details"):
+        out.append(f"Data details: {sources['details']}")
+    out.append(sources.get("line") or FALLBACK_SOURCES_LINE)
+    for key in ("station_line", "chirps_line"):
+        if sources.get(key):
+            out.append(sources[key])
+    return out
 
 
-mcp = FastMCP("Baseline")
+mcp = FastMCP("Hoodoo Weather")
 
 
 # --- Daily quota (2026-09-24) ---------------------------------------------------------------
@@ -159,13 +121,13 @@ def _quota_note(quota: dict | None, first_call: bool) -> str:
     limit, remaining = quota["limit"], quota["remaining"]
     when = _local_reset(quota["reset_at"])
     if remaining == 0:
-        return (f"Baseline quota: that was the last of today's {limit} questions on this key. "
+        return (f"Hoodoo quota: that was the last of today's {limit} questions on this key. "
                 f"It resets {when}. Tell the user.")
     if remaining < limit * _LOW_QUOTA_FRACTION:
-        return (f"Baseline quota: {remaining} of {limit} questions left today on this key; "
+        return (f"Hoodoo quota: {remaining} of {limit} questions left today on this key; "
                 f"resets {when}. Tell the user.")
     if first_call:
-        return (f"Baseline quota: this key allows {limit} questions a day, and {remaining} are "
+        return (f"Hoodoo quota: this key allows {limit} questions a day, and {remaining} are "
                 f"left today. The count resets {when}. Mention this to the user once.")
     return ""
 
@@ -283,7 +245,7 @@ def _scrub(text: str) -> str:
 
 
 def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) -> dict:
-    """POST to a Baseline API path. Raises RuntimeError with an actionable
+    """POST to a Hoodoo API path. Raises RuntimeError with an actionable
     message on any failure — callers should catch this and hand it back to the
     agent as the tool result, not let it surface as a stack trace."""
     url = f"{BASELINE_API_URL}{path}"
@@ -296,19 +258,19 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
         # the URL is the user's own setting and helps them fix it.
         log.warning(json.dumps({"event": "api_unreachable", "detail": str(error)[:300]}))
         if _REMOTE:
-            raise RuntimeError("Baseline's service couldn't be reached just now. Try again shortly.")
-        raise RuntimeError(f"Could not reach the Baseline API at {url}. Is the server running?")
+            raise RuntimeError("Hoodoo's service couldn't be reached just now. Try again shortly.")
+        raise RuntimeError(f"Could not reach the Hoodoo API at {url}. Is the server running?")
     except httpx.TimeoutException:
         _call_status.set("timeout")
         if _REMOTE:
-            raise RuntimeError(f"Baseline took longer than {timeout:.0f}s to answer. Try again shortly.")
-        raise RuntimeError(f"Baseline API at {url} timed out after {timeout:.0f}s.")
+            raise RuntimeError(f"Hoodoo took longer than {timeout:.0f}s to answer. Try again shortly.")
+        raise RuntimeError(f"Hoodoo API at {url} timed out after {timeout:.0f}s.")
 
     if response.status_code >= 400:
         _call_status.set(f"http_{response.status_code}")
     if response.status_code == 401:
         raise RuntimeError(
-            "Baseline API rejected the request (401 Unauthorized). "
+            "Hoodoo API rejected the request (401 Unauthorized). "
             "Check that BASELINE_API_KEY is set and valid."
         )
     quota = _quota_from_headers(response.headers)
@@ -319,11 +281,11 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
         _call_quota.set(None)  # the message below says it all; no second quota line
         if "lookup_limit" in body:
             raise RuntimeError(
-                f"Baseline's daily limit of {body['lookup_limit']} place lookups is used up for "
+                f"Hoodoo's daily limit of {body['lookup_limit']} place lookups is used up for "
                 f"this key. It resets {_local_reset(body.get('reset_at'))}. Tell the user."
             )
         raise RuntimeError(
-            f"Baseline's daily limit of {body.get('daily_limit')} questions is used up for this "
+            f"Hoodoo's daily limit of {body.get('daily_limit')} questions is used up for this "
             f"key. It resets {_local_reset(body.get('reset_at'))}. Nothing is wrong with the "
             "question: ask again after the reset. Tell the user."
         )
@@ -337,8 +299,8 @@ def _post(path: str, payload: dict, timeout: float = REQUEST_TIMEOUT_SECONDS) ->
         if not isinstance(detail, str) or detail.lstrip().startswith("<") or len(detail) > 1200:
             log.warning(json.dumps({"event": "api_error_body", "status": response.status_code,
                                     "detail": str(detail)[:300]}))
-            detail = "Baseline couldn't answer this just now. Try again shortly."
-        raise RuntimeError(f"Baseline API returned {response.status_code}: {_scrub(detail)}")
+            detail = "Hoodoo couldn't answer this just now. Try again shortly."
+        raise RuntimeError(f"Hoodoo API returned {response.status_code}: {_scrub(detail)}")
 
     return response.json()
 
@@ -367,9 +329,9 @@ def _format_clarification(data: dict) -> str:
 
 
 def _assessment_lines(data: dict) -> list:
-    """Baseline's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
+    """Hoodoo's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
 
-    Work plan B3: where Baseline did not state its own confidence, the model filled the
+    Work plan B3: where Hoodoo did not state its own confidence, the model filled the
     gap with speculation -- including claims that were wrong, one disagreement recycled
     across four unrelated answers, and reflexive "check the station" advice where nothing
     indicated a problem. A field buried in a JSON block does not prevent that; a labelled
@@ -382,7 +344,7 @@ def _assessment_lines(data: dict) -> list:
     assessment = data.get("assessment") or {}
     if not assessment.get("headline"):
         return []
-    lines = ["\nBaseline Climate's own assessment — relay this, do not compose your own:",
+    lines = ["\nHoodoo Weather's own assessment — relay this, do not compose your own:",
              f"- {assessment['headline']}"]
     keep = assessment.get("if_shortened_keep")
     if keep and keep != assessment["headline"]:
@@ -425,15 +387,15 @@ def _format_context_result(data: dict) -> str:
             if label is not None:
                 lines.append(f"- {label}: {value}")
 
-    # Baseline's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
-    # Work plan B3: where Baseline did not state its own confidence, the model filled the
+    # Hoodoo's own assessment, surfaced ABOVE the raw JSON rather than left inside it.
+    # Work plan B3: where Hoodoo did not state its own confidence, the model filled the
     # gap with speculation -- including claims that were wrong, one disagreement recycled
     # across four unrelated answers, and reflexive "check the station" advice where nothing
     # indicated a problem. A field buried in a JSON block does not prevent that; a labelled
     # instruction might.
     lines.extend(_assessment_lines(data))
 
-    lines.append(f"\n{_context_provenance_line(data)}")
+    lines.append("\n" + "\n".join(_source_lines(data.get("sources"))))
 
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
@@ -446,7 +408,9 @@ def _format_context_result(data: dict) -> str:
 @_logged
 @_with_quota_note
 def get_climate_context(query: str) -> str:
-    """Past, recent and coming weather at a named place, measured against that
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+Past, recent and coming weather at a named place, measured against that
     place's own record since 1991. Use it for how wet, dry, hot or cold a place
     has been (this water year, last winter, a named month such as August 2026);
     whether that, or the next 10 days, is unusual; where a period ranks in the
@@ -474,7 +438,7 @@ def get_climate_context(query: str) -> str:
     see get_seasonal_outlook, which takes a place and variables directly and is the
     better choice when the question is plainly about the season ahead.
 
-    Baseline Climate states its own confidence in an `assessment` field. Relay
+    Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
     `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
     it turns a qualified statement into an unqualified one. Do not compose your own
@@ -498,14 +462,16 @@ def get_climate_context(query: str) -> str:
 @_logged
 @_with_quota_note
 def get_context_for_coordinates(latitude: float, longitude: float, label: str = "") -> str:
-    """The next 10 days at an exact latitude and longitude (a field, property,
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+The next 10 days at an exact latitude and longitude (a field, property,
     trailhead or site), each day ranked against the same calendar day in every
     year since 1991 ("warmest October 5 since 1991"), plus where the water year
     stands there. Takes coordinates only, not a question, and skips place-name
     lookup. Land only. For a past period at a point, ask get_climate_context
     with the coordinates in the question.
 
-    Baseline Climate states its own confidence in an `assessment` field. Relay
+    Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
     `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
     it turns a qualified statement into an unqualified one. Do not compose your own
@@ -546,7 +512,9 @@ def _parse_coords(text: str):
 @_logged
 @_with_quota_note
 def get_water_year_status(location: str) -> str:
-    """How wet or dry, and warm or cold, a place has been so far this water year
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+How wet or dry, and warm or cold, a place has been so far this water year
     (from October 1 in North America; from January 1 elsewhere): totals,
     percent of normal, and the year's rank against the same span of every year
     since 1991 ("2nd driest since 1991"). The record publishes about a month
@@ -554,7 +522,7 @@ def get_water_year_status(location: str) -> str:
     For drought, water supply, range, crop and fire questions. location can be
     a place name ("Casper WY") or "lat,lon" coordinates.
 
-    Baseline Climate states its own confidence in an `assessment` field. Relay
+    Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
     `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
     it turns a qualified statement into an unqualified one. Do not compose your own
@@ -588,7 +556,9 @@ def get_water_year_status(location: str) -> str:
 @_logged
 @_with_quota_note
 def compare_to_normal(location: str, variable: str, time_window: str = "") -> str:
-    """Is the coming week unusually warm, cold, wet or dry? Ranks the forecast
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+Is the coming week unusually warm, cold, wet or dry? Ranks the forecast
     for the next few days (up to 10) at a place against the same days in every
     year since 1991, as percentiles and departures from normal. Forecast only:
     past weather ("last month", "this water year") is a question for
@@ -598,7 +568,7 @@ def compare_to_normal(location: str, variable: str, time_window: str = "") -> st
     "this weekend", "this week", "the next 10 days") — defaults to
     "this week".
 
-    Baseline Climate states its own confidence in an `assessment` field. Relay
+    Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
     `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping
     it turns a qualified statement into an unqualified one. Do not compose your own
@@ -628,7 +598,7 @@ def compare_to_normal(location: str, variable: str, time_window: str = "") -> st
 
 def _resolve_location(text: str) -> dict:
     """Resolve a place name or 'lat,lon' string to {lat, lon, label} via
-    Baseline's /api/resolve. Raises RuntimeError on failure or ambiguity."""
+    Hoodoo's /api/resolve. Raises RuntimeError on failure or ambiguity."""
     coords = _parse_coords(text)
     if coords:
         lat, lon = coords
@@ -722,7 +692,7 @@ def _format_compare_result(data: dict) -> str:
         lines.append(f"\n{comparison['amounts_note']}")
     if comparison.get("confidence"):
         lines.append(f"\nConfidence: {comparison['confidence']}")
-    lines.append(f"\n{comparison.get('provenance', _PROVENANCE_LINE)}")
+    lines.append("\n" + "\n".join(_source_lines(comparison.get("sources"))))
 
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
@@ -743,7 +713,9 @@ def compare_locations(
     year: int = 0,
     month: int = 0,
 ) -> str:
-    """Compare a region or a set of places on rainfall, temperature or snowfall
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+Compare a region or a set of places on rainfall, temperature or snowfall
     over the same past period (this water year, a season, a month, or a ski
     season): 2-10 places such as towns across several counties, the farms or
     properties in a portfolio (as "lat,lon"), or a named group of places. For
@@ -753,7 +725,7 @@ def compare_locations(
     its rank against the others. Use it whenever a question is about more than
     one place, for example whether an event was local or regional, or which
     sites fared worst, instead of asking about each place separately: the
-    ranking is computed by Baseline, not by your own arithmetic. A county or
+    ranking is computed by Hoodoo, not by your own arithmetic. A county or
     other area isn't a point: give a town in it, or coordinates.
 
     Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
@@ -839,7 +811,7 @@ def compare_locations(
         return str(error)
 
     if data.get("status") == "error":
-        return data.get("error", "Unknown error from Baseline API.")
+        return data.get("error", "Unknown error from Hoodoo API.")
 
     if unplaced:
         return _unplaced_lines(unplaced, len(locations), compared=True) + "\n\n" + _format_compare_result(data)
@@ -847,8 +819,8 @@ def compare_locations(
 
 
 def _plain_reason(error: str | None) -> str:
-    """The lookup's own sentence without the transport prefix ("Baseline API returned 400: ")."""
-    return re.sub(r"^Baseline API returned \d+:\s*", "", (error or "").strip()) or "it couldn't be found"
+    """The lookup's own sentence without the transport prefix ("Hoodoo API returned 400: ")."""
+    return re.sub(r"^Hoodoo API returned \d+:\s*", "", (error or "").strip()) or "it couldn't be found"
 
 
 def _unplaced_lines(unplaced: list, total: int, compared: bool) -> str:
@@ -885,7 +857,7 @@ def _format_seasonal_result(data: dict) -> str:
             lines.append(f"- {variable}: skill status {skill['status']}")
 
     lines.extend(_assessment_lines(data))
-    lines.append(f"\n{_SEASONAL_PROVENANCE_LINE}")
+    lines.append("\n" + "\n".join(_source_lines(data.get("sources"))))
     lines.append("\n```json")
     lines.append(json.dumps(data, indent=2, default=str))
     lines.append("```")
@@ -900,7 +872,9 @@ def get_seasonal_outlook(
     variables: list[str] | None = None,
     season: str = "",
 ) -> str:
-    """Odds that the coming three-month season at a place will be warmer or cooler,
+    """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
+
+Odds that the coming three-month season at a place will be warmer or cooler,
     wetter or drier than normal: calibrated probabilities for below, near and above
     normal, from ECMWF's SEAS5 seasonal forecast, with how well the outlook has tested
     at that place and season. A season-ahead outlook, not a 10-day forecast and not a
@@ -941,7 +915,7 @@ def get_seasonal_outlook(
     cycle and to most tropical ones. Keep that sentence; it is the difference between a
     bounded estimate and an invented one.
 
-    Baseline Climate states its own confidence in an `assessment` field. Relay
+    Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep `assessment.if_shortened_keep`
     intact — it carries the qualifier, and for a two-variable answer it carries one for
     each half, so dropping part of it turns a qualified statement into an unqualified one.
@@ -978,7 +952,7 @@ def get_seasonal_outlook(
 
 @mcp.custom_route("/healthz", methods=["GET"])
 async def _healthz(request):
-    """Liveness only, no key needed; says nothing about the Baseline API behind it."""
+    """Liveness only, no key needed; says nothing about the Hoodoo API behind it."""
     from starlette.responses import JSONResponse
     return JSONResponse({"status": "ok"})
 
@@ -988,7 +962,7 @@ _key_checks: dict = {}          # caller id -> (valid, checked_at)
 
 
 async def _key_is_valid(key: str) -> bool | None:
-    """Ask the Baseline API whether a key is live (/api/usage costs no question). True, False,
+    """Ask the Hoodoo API whether a key is live (/api/usage costs no question). True, False,
     or None when the API can't say. Cached briefly per key fingerprint, so a session's many
     requests make one check, and a deactivated key stops working within minutes."""
     caller = _caller_id(key)
@@ -1012,7 +986,7 @@ async def _key_is_valid(key: str) -> bool | None:
 
 def _auth_gate(app):
     """ASGI gate in front of the MCP app in remote mode: a request with no key, or a key the
-    Baseline API does not know, gets a plain 401 before any MCP handling. /healthz is open."""
+    Hoodoo API does not know, gets a plain 401 before any MCP handling. /healthz is open."""
     async def _reply(send, status: int, message: str):
         body = json.dumps({"error": message}).encode()
         await send({"type": "http.response.start", "status": status,
@@ -1027,17 +1001,17 @@ def _auth_gate(app):
         key = _key_from_headers(headers)
         if not key:
             log.info(json.dumps({"event": "auth", "status": "missing_key", "caller": "none"}))
-            return await _reply(send, 401, "A Baseline API key is required in the X-Api-Key "
+            return await _reply(send, 401, "A Hoodoo API key is required in the X-Api-Key "
                                             "header (or Authorization: Bearer).")
         valid = await _key_is_valid(key)
         if valid is None:
             log.info(json.dumps({"event": "auth", "status": "api_unreachable",
                                  "caller": _caller_id(key)}))
-            return await _reply(send, 503, "The Baseline API could not be reached to check the "
+            return await _reply(send, 503, "The Hoodoo API could not be reached to check the "
                                             "key. Try again shortly.")
         if not valid:
             log.info(json.dumps({"event": "auth", "status": "invalid_key", "caller": _caller_id(key)}))
-            return await _reply(send, 401, "That Baseline API key is not valid.")
+            return await _reply(send, 401, "That Hoodoo API key is not valid.")
         return await _logged_request(app, scope, receive, send, headers, _caller_id(key))
     return gate
 
@@ -1131,8 +1105,7 @@ def main():
         log.warning(json.dumps({"event": "startup", "note": "BASELINE_API_KEY is set but ignored "
                                 "in http mode; every call uses its caller's key"}))
     from mcp.server.transport_security import TransportSecuritySettings
-    public_hosts = [h.strip() for h in os.environ.get(
-        "BASELINE_MCP_PUBLIC_HOSTS", "mcp.baselinecontext.com").split(",") if h.strip()]
+    public_hosts = _public_hosts()
     mcp.settings.transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=["127.0.0.1:*", "localhost:*", "[::1]:*"] + public_hosts,

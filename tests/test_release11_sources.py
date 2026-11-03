@@ -17,7 +17,8 @@ CHIRPS = "Rainfall record: CHIRPS, Climate Hazards Center, UC Santa Barbara."
 
 
 def _head(text: str) -> str:
-    return text.split("\n```json")[0]
+    """The printed answer above the JSON block, without the blank line before that block."""
+    return text.split("\n```json")[0].rstrip("\n")
 
 
 def _sources(line, details=None, station_line=None, chirps_line=None):

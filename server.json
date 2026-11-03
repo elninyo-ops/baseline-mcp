@@ -17,14 +17,14 @@
       },
       "environmentVariables": [
         {
-          "description": "Base URL of the Baseline API instance to query.",
+          "description": "Base URL of the Hoodoo API instance to query.",
           "isRequired": true,
           "format": "string",
           "isSecret": false,
           "name": "BASELINE_API_URL"
         },
         {
-          "description": "API key for the Baseline API. Contact chadmcnutt@gmail.com for a key -- self-serve signup is not yet available.",
+          "description": "API key for the Hoodoo API. Contact chadmcnutt@gmail.com for a key -- self-serve signup is not yet available.",
           "isRequired": true,
           "format": "string",
           "isSecret": true,

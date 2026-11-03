@@ -1,4 +1,4 @@
-# Baseline Climate
+# Hoodoo Weather
 
 <!-- mcp-name: io.github.elninyo-ops/baseline-mcp -->
 
@@ -71,7 +71,7 @@ Most tools hand you a number. This one hands you the number **and its standing**
   warming trend predicted the season better than the model did — that the model isn't the thing to
   go on. **We publish the cases where our own forecast isn't the best available answer.**
 
-Every response carries an `assessment` field with Baseline Climate's own confidence statement, and
+Every response carries an `assessment` field with Hoodoo Weather's own confidence statement, and
 the tool descriptions instruct the model to relay it rather than compose its own. That exists
 because the failure mode is real: given a bare number, models invent records that weren't broken,
 assert a dataset is unreliable somewhere it isn't, and recycle one station disagreement across
@@ -99,6 +99,10 @@ and where the limits are.
 - **`compare_to_normal`** — how unusual near-term conditions are at one location.
 - **`compare_locations`** — rank precipitation, temperature or snowfall across 2–10 locations, or
   a curated category, over a water year, season, month or ski season.
+- **`get_seasonal_outlook`** — odds that the coming three-month season will be wetter, drier, warmer or
+  colder than normal, with how well the outlook has tested at that place.
+
+The hosted server is at `https://mcp.hoodoowx.com/mcp` (`https://mcp.baselinecontext.com/mcp` keeps working).
 
 ## Install
 
@@ -112,8 +116,8 @@ pip install baseline-mcp     # or: uvx baseline-mcp
 **Claude Code**
 
 ```bash
-claude mcp add baseline \
-  --env BASELINE_API_URL=https://api.baselinecontext.com \
+claude mcp add hoodoo \
+  --env BASELINE_API_URL=https://api.hoodoowx.com \
   --env BASELINE_API_KEY=your-key-here \
   -- uvx baseline-mcp
 ```
@@ -123,11 +127,11 @@ claude mcp add baseline \
 ```json
 {
   "mcpServers": {
-    "baseline": {
+    "hoodoo": {
       "command": "uvx",
       "args": ["baseline-mcp"],
       "env": {
-        "BASELINE_API_URL": "https://api.baselinecontext.com",
+        "BASELINE_API_URL": "https://api.hoodoowx.com",
         "BASELINE_API_KEY": "your-key-here"
       }
     }
@@ -140,7 +144,7 @@ claude mcp add baseline \
 **As an HTTP server** (streamable HTTP, for hosting behind a reverse proxy):
 
 ```bash
-BASELINE_API_URL=https://api.baselinecontext.com baseline-mcp --transport http --port 8765
+BASELINE_API_URL=https://api.hoodoowx.com baseline-mcp --transport http --port 8765
 ```
 
 It serves `/mcp` on 127.0.0.1 and holds no key of its own: every request must carry the caller's
@@ -151,7 +155,7 @@ default, `--transport stdio`, is the local server shown above.
 ## Contributing
 
 This package is a thin translation layer: no climate logic lives here, and every tool call is an
-HTTP request to the Baseline Climate API. See `CONTRIBUTING.md` in [the repository](https://github.com/elninyo-ops/baseline-mcp) for local
+HTTP request to the Hoodoo Weather API. See `CONTRIBUTING.md` in [the repository](https://github.com/elninyo-ops/baseline-mcp) for local
 development setup.
 
 MIT licensed.
