@@ -4,7 +4,7 @@ import asyncio
 
 import baseline_mcp.server as srv
 
-AREA = "Baseline API returned 400: That sounds like an area rather than a single point. For now, give me a city, landmark, ski resort, or coordinates to use as a representative point."
+AREA = "Hoodoo API returned 400: That sounds like an area rather than a single point. For now, give me a city, landmark, ski resort, or coordinates to use as a representative point."
 
 
 def _fake_resolve(text):
@@ -29,7 +29,7 @@ def test_the_places_that_resolve_are_compared_and_the_area_is_named_in_words(mon
     assert [l["label"] for l in _fake_post.sent["locations"]] == ["Torrington, WY", "Scottsbluff, NE", "Cheyenne, WY"]
     assert out.startswith("Left out of the comparison: 1 of the 4 places asked for couldn't be placed.")
     assert "- Goshen County, WY: That sounds like an area rather than a single point." in out
-    assert "Baseline API returned" not in out.split("```json")[0] and "400" not in out.split("```json")[0]
+    assert "Hoodoo API returned" not in out.split("```json")[0] and "400" not in out.split("```json")[0]
     assert "Torrington, WY" in out
 
 

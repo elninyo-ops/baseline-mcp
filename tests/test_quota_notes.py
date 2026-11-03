@@ -45,12 +45,12 @@ def _ask(*responses) -> list[str]:
 def test_the_first_call_states_the_limit_and_later_calls_stay_quiet():
     first, second = _ask(_response(200, 99), _response(200, 98))
     assert "this key allows 100 questions a day, and 99 are left today" in first
-    assert "Baseline quota" not in second
+    assert "Hoodoo quota" not in second
 
 
 def test_under_ten_percent_every_call_warns():
     results = _ask(_response(200, 50), _response(200, 10), _response(200, 9), _response(200, 1))
-    assert "Baseline quota" not in results[1]          # 10 of 100 is not under 10%
+    assert "Hoodoo quota" not in results[1]          # 10 of 100 is not under 10%
     assert "9 of 100 questions left today" in results[2]
     assert "1 of 100 questions left today" in results[3]
 
@@ -66,7 +66,7 @@ def test_the_limit_itself_says_when_it_resets_in_local_time_and_nothing_else():
     local = datetime.fromisoformat(RESET_AT).astimezone()
     assert "daily limit of 100 questions is used up" in result
     assert local.strftime("%I:%M %p").lstrip("0") in result and local.tzname() in result
-    assert result.count("Baseline quota") == 0
+    assert result.count("Hoodoo quota") == 0
 
 
 def test_a_refused_place_lookup_says_lookups_not_questions():
