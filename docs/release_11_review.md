@@ -1,4 +1,4 @@
-# Release 11 (MCP): the Hoodoo Weather rename and the API's source lines (2026-11-03)
+# Release 11 (MCP): the Hoodoo Weather rename and the API's source lines (2026-11-03; re-swept 2026-11-10)
 
 `release/2026-11-rename` against the live `a417f08`. The full review, with the comparison data, is in the API repo:
 `docs/release_11_review.md` on its `release/2026-11-rename`, section "The MCP". The design is
@@ -33,10 +33,16 @@
   - Removed: `test_context_provenance.py`, together with three cases of `test_snowfall_source_line.py`. They
     tested the removed builders; their criteria are pinned in the API's `tests/test_source_lines.py`.
 
-## Result
+## Result (2026-11-10, after the API's rebase on 10f part 1, `8a350a5`)
 
-- **Suite:** 56 passed (`PYTHONPATH=src`). At `a417f08` it was 50.
-- **Comparison:** 195 calls, valid.
-  - Tier 1: 168. Unchanged: 13. Nothing lost.
-  - 12 corrections: the old line named ERA5-Land for data the answer didn't use.
-  - **Tier 3: 14, all "Still working" replies**, which now print the bare credits line. For the owner.
+- **A "Still working" reply prints no source line** (owner, 2026-11-03): `_format_context_result`, test first
+  (`3c98f67` failed, `c467c1a` passes).
+- **Suite:** 57 passed (`PYTHONPATH=src`). At `a417f08` it was 50.
+- **Comparison** (the API repo's `docs/release_11_mcp_sweep.json`, recorded from a fresh copy of the rebased
+  release API): 195 calls, valid, 0 errors on either side.
+  - Tier 1: 182, of which 15 are "Still working" replies that now print no source line, as decided.
+  - Unchanged: 13. **Tier 3: 0. Nothing lost.**
+  - 8 corrections: the old line named ERA5-Land for data the answer didn't use.
+- **No MCP change for the API's item 4** (hidden fields agree with the visible answer): the MCP prints the API's
+  JSON as it is.
+- The 2026-11-03 result (tier 3: 14 "Still working" replies, for the owner) is in git history; it is decided.
