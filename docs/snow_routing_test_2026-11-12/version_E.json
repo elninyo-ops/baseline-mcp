@@ -1,0 +1,206 @@
+{
+  "version": "E",
+  "server_label": "hoodoo",
+  "tools": [
+    {
+      "name": "get_weather_forecast",
+      "description": "Get the current weather and forecast for a location: temperature highs and lows, chance and amount of precipitation, wind, cloud cover and conditions, for today and up to the next 7 days.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City or place name"
+          },
+          "days": {
+            "type": "integer",
+            "description": "Number of forecast days (1-7)"
+          }
+        },
+        "required": [
+          "location"
+        ]
+      }
+    },
+    {
+      "name": "hoodoo__get_climate_context",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nPast, recent and coming weather at a named place, measured against that\n    place's own record since 1991. This is the Hoodoo tool for any weather\n    question asked in plain words, and it answers snow questions: how much snow\n    has fallen so far this season, the snow season to date, and how snowy a past\n    winter or ski season was. Use it for how wet, dry, hot, cold or snowy a place\n    has been (this water year, last winter, a named month such as August 2026);\n    whether that, or the next 10 days, is unusual; where a period ranks in the\n    record (\"2nd driest since 1991\"); and how it compares with the 1991-2020\n    normal. Answers are computed from ERA5-Land reanalysis (daily, about 10 km,\n    land only) and Open-Meteo forecasts, not from news or web pages, and they\n    state their own coverage.\n\n    query MUST be phrased as a question in one of these forms (the location\n    goes where LOCATION is shown; the underlying parser matches these\n    patterns specifically and will fail on other phrasings, e.g. \"weather\n    context for LOCATION\" does not work):\n    - \"Will LOCATION be warmer/wetter than normal this week?\"\n    - \"Has LOCATION been dry this water year?\" / \"this year?\"\n    - \"How cold/warm/wet was last winter/spring/summer/fall in LOCATION?\"\n    - \"What is the wettest/driest month in LOCATION?\"\n    - \"How much snow has LOCATION had so far this season?\"\n    - \"How snowy was last winter in LOCATION?\"\n\n    It also answers SEASONAL (three-month) outlook questions, which are about the\n    season ahead rather than the next ten days:\n    - \"Will this season be warmer/wetter than normal in LOCATION?\"\n    - \"Will this winter/spring/summer/fall be warm and wet in LOCATION?\"\n\n    Seasonal answers carry a per-location skill label and sometimes say that no\n    outlook is currently issued, which is a correct answer rather than a failure —\n    see get_seasonal_outlook, which takes a place and variables directly and is the\n    better choice when the question is plainly about the season ahead.\n\n    Hoodoo Weather states its own confidence in an `assessment` field. Relay\n    `assessment.headline` as given. If you shorten it, keep\n    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping\n    it turns a qualified statement into an unqualified one. Do not compose your own\n    assessment of how reliable a result is, do not carry a caveat from one location\n    or period to another, and do not add reliability warnings unless the response\n    flags a problem. `assessment.must_not_claim` lists what the result does not\n    support.\n    ",
+      "input_schema": {
+        "properties": {
+          "query": {
+            "title": "Query",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "get_climate_contextArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "hoodoo__get_context_for_coordinates",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nThe next 10 days at an exact latitude and longitude (a field, property,\n    trailhead or site), each day ranked against the same calendar day in every\n    year since 1991 (\"warmest October 5 since 1991\"), plus where the water year\n    stands there. Takes coordinates only, not a question, and skips place-name\n    lookup. Land only. For a past period at a point, ask get_climate_context\n    with the coordinates in the question.\n\n    Hoodoo Weather states its own confidence in an `assessment` field. Relay\n    `assessment.headline` as given. If you shorten it, keep\n    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping\n    it turns a qualified statement into an unqualified one. Do not compose your own\n    assessment of how reliable a result is, do not carry a caveat from one location\n    or period to another, and do not add reliability warnings unless the response\n    flags a problem. `assessment.must_not_claim` lists what the result does not\n    support.\n    ",
+      "input_schema": {
+        "properties": {
+          "latitude": {
+            "title": "Latitude",
+            "type": "number"
+          },
+          "longitude": {
+            "title": "Longitude",
+            "type": "number"
+          },
+          "label": {
+            "default": "",
+            "title": "Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ],
+        "title": "get_context_for_coordinatesArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "hoodoo__get_water_year_status",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nHow wet or dry, and warm or cold, a place has been so far this water year\n    (from October 1 in North America; from January 1 elsewhere): totals,\n    percent of normal, and the year's rank against the same span of every year\n    since 1991 (\"2nd driest since 1991\"). The record publishes about a month\n    behind, so in October it answers the water year just ended and says so.\n    For drought, water supply, range, crop and fire questions. It covers\n    precipitation (rain, with any snow counted as melted water) and temperature\n    only, not snowfall: for how much snow has fallen this season, or how snowy\n    a winter was, use get_climate_context. location can be a place name\n    (\"Casper WY\") or \"lat,lon\" coordinates.\n\n    Hoodoo Weather states its own confidence in an `assessment` field. Relay\n    `assessment.headline` as given. If you shorten it, keep\n    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping\n    it turns a qualified statement into an unqualified one. Do not compose your own\n    assessment of how reliable a result is, do not carry a caveat from one location\n    or period to another, and do not add reliability warnings unless the response\n    flags a problem. `assessment.must_not_claim` lists what the result does not\n    support.\n    ",
+      "input_schema": {
+        "properties": {
+          "location": {
+            "title": "Location",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "title": "get_water_year_statusArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "hoodoo__compare_to_normal",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nIs the coming week unusually warm, cold, wet or dry? Ranks the forecast\n    for the next few days (up to 10) at a place against the same days in every\n    year since 1991, as percentiles and departures from normal. Forecast only:\n    past weather (\"last month\", \"this water year\") is a question for\n    get_climate_context, and windows beyond 10 days are declined.\n    variable must be \"temperature\" or \"precipitation\"; snow is not a variable\n    here, so a snow question goes to get_climate_context. time_window is\n    optional free text for a near-term window (e.g. \"today\", \"tomorrow\",\n    \"this weekend\", \"this week\", \"the next 10 days\") — defaults to\n    \"this week\".\n\n    Hoodoo Weather states its own confidence in an `assessment` field. Relay\n    `assessment.headline` as given. If you shorten it, keep\n    `assessment.if_shortened_keep` intact — it carries the qualifier, and dropping\n    it turns a qualified statement into an unqualified one. Do not compose your own\n    assessment of how reliable a result is, do not carry a caveat from one location\n    or period to another, and do not add reliability warnings unless the response\n    flags a problem. `assessment.must_not_claim` lists what the result does not\n    support.\n    ",
+      "input_schema": {
+        "properties": {
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "variable": {
+            "title": "Variable",
+            "type": "string"
+          },
+          "time_window": {
+            "default": "",
+            "title": "Time Window",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "variable"
+        ],
+        "title": "compare_to_normalArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "hoodoo__compare_locations",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nCompare a region or a set of places on rainfall, temperature or snowfall\n    over the same past period (this water year, a season, a month, or a ski\n    season): 2-10 places such as towns across several counties, the farms or\n    properties in a portfolio (as \"lat,lon\"), or a named group of places. For\n    each place: its total or average, how far it is from normal (percent of\n    normal for rain and snow, degrees for temperature), where that period\n    stands in its own record since 1991 (\"near average\", \"3rd wettest\"), and\n    its rank against the others. Use it whenever a question is about more than\n    one place, for example whether an event was local or regional, or which\n    sites fared worst, instead of asking about each place separately: the\n    ranking is computed by Hoodoo, not by your own arithmetic. A county or\n    other area isn't a point: give a town in it, or coordinates.\n\n    Provide EITHER `locations` (a list of 2-10 place names and/or \"lat,lon\"\n    strings) OR `category` (a curated group name) — not both.\n\n    Valid category values: colorado_ski_resorts, wyoming_ski_resorts,\n    utah_ski_resorts, wyoming_watersheds, colorado_river_basin_states,\n    great_plains_ag, major_us_cities, major_european_cities,\n    us_national_parks.\n\n    variable: \"precipitation\" (default), \"temperature\", or \"snowfall\".\n    Snowfall is sourced from a different, coarser (0.25-degree) Open-Meteo\n    archive than precipitation/temperature (0.1-degree ERA5-Land) — results\n    are correct but not directly resolution-comparable across variables.\n\n    period: \"water_year\" (default, Oct 1 / Jan 1 to date), \"season\" (also\n    set season=\"winter\"/\"spring\"/\"summer\"/\"fall\" and optionally year),\n    \"month\" (also set month=1-12 and optionally year), or \"ski_season\"\n    (fixed Nov 1 - Apr 30 window; optionally set year=<November's year>,\n    e.g. year=2019 for the 2019-2020 season; defaults to the most recently\n    started ski season). Custom date ranges are not supported — use\n    \"water_year\", \"season\", \"month\", or \"ski_season\".\n    ",
+      "input_schema": {
+        "properties": {
+          "locations": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Locations"
+          },
+          "category": {
+            "default": "",
+            "title": "Category",
+            "type": "string"
+          },
+          "variable": {
+            "default": "precipitation",
+            "title": "Variable",
+            "type": "string"
+          },
+          "period": {
+            "default": "water_year",
+            "title": "Period",
+            "type": "string"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          },
+          "year": {
+            "default": 0,
+            "title": "Year",
+            "type": "integer"
+          },
+          "month": {
+            "default": 0,
+            "title": "Month",
+            "type": "integer"
+          }
+        },
+        "title": "compare_locationsArguments",
+        "type": "object"
+      }
+    },
+    {
+      "name": "hoodoo__get_seasonal_outlook",
+      "description": "If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'\n\nOdds that the coming three-month season at a place will be warmer or cooler,\n    wetter or drier than normal: calibrated probabilities for below, near and above\n    normal, from ECMWF's SEAS5 seasonal forecast, with how well the outlook has tested\n    at that place and season. A season-ahead outlook, not a 10-day forecast and not a\n    record of past weather.\n\n    This is a three-month climate outlook, not a weather forecast. For conditions over the\n    next ten days, or for how unusual recent weather has been, use get_climate_context.\n\n    location: a place name (\"Harare\", \"Denver, Colorado\") or a \"lat,lon\" string.\n    variables: any of \"temperature\", \"precipitation\". Defaults to BOTH, which answers\n        compound questions like \"will this winter be warm and wet\" in one call — ask for\n        both rather than calling twice and stitching the answers together.\n    season: optional \"DJF\", \"MAM\", \"JJA\" or \"SON\". Leave empty for the season currently\n        being forecast, which is almost always what a question about \"this season\" means.\n\n    WHAT YOU GET BACK, AND HOW IT VARIES BY PLACE:\n\n    Probabilities are produced for every land location the model covers, and they are\n    always returned. How well they have been tested is a separate matter that varies by\n    location and season: at some places the odds have been shown to beat a climatological\n    guess, at some only the direction is worth using, at some a simple warming trend\n    predicted the season better than the model did, and at many they have never been\n    tested at all. The answer states which of these applies in its own words. Relay that\n    standing as written — an untested outlook is not a bad one, and neither is it a\n    verified one.\n\n    \"NO OUTLOOK IS CURRENTLY ISSUED\" IS A NORMAL, CORRECT ANSWER. An outlook exists only\n    for the forecast cycle now live, which is the season the models have most recently\n    been run for. Ask in September about the coming December-February and the honest reply\n    is that none is issued yet, because the forecast it would be built from has not been\n    produced. That is expected behaviour, not a failure, a gap in coverage or a reason to\n    retry: relay it as given, and say when the outlook will be published if the response\n    says so. Do not substitute a forecast, a historical average or your own estimate.\n\n    Some answers say the forecast is more extreme than anything in the years the model was\n    fitted on, and that the odds are held at the strongest the record supports. This is\n    common rather than exotic — it applies to about a third of locations on the current\n    cycle and to most tropical ones. Keep that sentence; it is the difference between a\n    bounded estimate and an invented one.\n\n    Hoodoo Weather states its own confidence in an `assessment` field. Relay\n    `assessment.headline` as given. If you shorten it, keep `assessment.if_shortened_keep`\n    intact — it carries the qualifier, and for a two-variable answer it carries one for\n    each half, so dropping part of it turns a qualified statement into an unqualified one.\n    Do not compose your own assessment of how reliable a result is, and do not carry a\n    caveat from one location or season to another.\n    ",
+      "input_schema": {
+        "properties": {
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "variables": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Variables"
+          },
+          "season": {
+            "default": "",
+            "title": "Season",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "title": "get_seasonal_outlookArguments",
+        "type": "object"
+      }
+    }
+  ]
+}

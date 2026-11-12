@@ -414,7 +414,10 @@ def get_climate_context(query: str) -> str:
     """If the user says 'hoodoo' followed by a place or a question, answer with Hoodoo's tools. 'Hoodoo Casper' means 'get the Hoodoo report for Casper.'
 
 Past, recent and coming weather at a named place, measured against that
-    place's own record since 1991. Use it for how wet, dry, hot or cold a place
+    place's own record since 1991. This is the Hoodoo tool for any weather
+    question asked in plain words, and it answers snow questions: how much snow
+    has fallen so far this season, the snow season to date, and how snowy a past
+    winter or ski season was. Use it for how wet, dry, hot, cold or snowy a place
     has been (this water year, last winter, a named month such as August 2026);
     whether that, or the next 10 days, is unusual; where a period ranks in the
     record ("2nd driest since 1991"); and how it compares with the 1991-2020
@@ -430,6 +433,8 @@ Past, recent and coming weather at a named place, measured against that
     - "Has LOCATION been dry this water year?" / "this year?"
     - "How cold/warm/wet was last winter/spring/summer/fall in LOCATION?"
     - "What is the wettest/driest month in LOCATION?"
+    - "How much snow has LOCATION had so far this season?"
+    - "How snowy was last winter in LOCATION?"
 
     It also answers SEASONAL (three-month) outlook questions, which are about the
     season ahead rather than the next ten days:
@@ -522,8 +527,11 @@ How wet or dry, and warm or cold, a place has been so far this water year
     percent of normal, and the year's rank against the same span of every year
     since 1991 ("2nd driest since 1991"). The record publishes about a month
     behind, so in October it answers the water year just ended and says so.
-    For drought, water supply, range, crop and fire questions. location can be
-    a place name ("Casper WY") or "lat,lon" coordinates.
+    For drought, water supply, range, crop and fire questions. It covers
+    precipitation (rain, with any snow counted as melted water) and temperature
+    only, not snowfall: for how much snow has fallen this season, or how snowy
+    a winter was, use get_climate_context. location can be a place name
+    ("Casper WY") or "lat,lon" coordinates.
 
     Hoodoo Weather states its own confidence in an `assessment` field. Relay
     `assessment.headline` as given. If you shorten it, keep
@@ -566,7 +574,8 @@ Is the coming week unusually warm, cold, wet or dry? Ranks the forecast
     year since 1991, as percentiles and departures from normal. Forecast only:
     past weather ("last month", "this water year") is a question for
     get_climate_context, and windows beyond 10 days are declined.
-    variable must be "temperature" or "precipitation". time_window is
+    variable must be "temperature" or "precipitation"; snow is not a variable
+    here, so a snow question goes to get_climate_context. time_window is
     optional free text for a near-term window (e.g. "today", "tomorrow",
     "this weekend", "this week", "the next 10 days") — defaults to
     "this week".

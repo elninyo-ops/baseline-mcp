@@ -1,0 +1,64 @@
+{
+  "written": "2026-11-12",
+  "purpose": "Snow questions were sent to the wrong tool. On 2026-11-12 the owner's end-to-end test on mcp.hoodoowx.com asked 'How much snow has Denver had so far this season?'. Claude called get_water_year_status, which answers rain only, and then said Hoodoo doesn't measure snowfall. get_climate_context answers this question correctly. This test checks a description-only fix. Tool names, arguments and behaviour are unchanged. Written and committed before any API call.",
+  "versions": {
+    "D": "Live. The six descriptions served by 8c174b1 (release/2026-11-rename, live since 2026-11-12). The file is version D of the 2026-11-03 trigger test, copied unchanged from branch hoodoo-trigger-test-2026-11-03 in ~/Projects/baseline. Before the copy was used, its descriptions and input schemas were checked equal, byte for byte, to what 8c174b1's server lists. File: snow_routing_test_2026-11-12/version_D.json.",
+    "E": "New. Version D with the descriptions of get_climate_context, get_water_year_status and compare_to_normal replaced by the text on branch fix/2026-11-snow-tool-descriptions, read from the server's own list_tools. All else is identical to D: the names, schemas, the other three descriptions, server label 'hoodoo' (tool names hoodoo__<tool>), and the get_weather_forecast distractor tool. File: snow_routing_test_2026-11-12/version_E.json."
+  },
+  "method": {
+    "harness": "snow_routing_test_2026-11-12/harness/run_addendum.py, with rerun_hoodoo.py and run_routing.py beside it. These are copied unchanged from docs/hoodoo_trigger_test_2026-10-20/harness on branch hoodoo-trigger-test-2026-11-03 in ~/Projects/baseline, and are the same harness the 2026-11-03 test used. It is resumable, saves after every call, retries only connection errors and 5xx (twice), and stops the whole run on any 4xx. Run with anthropic 0.109.2 (~/.venvs/baseline-test).",
+    "models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
+    "runs_per_model": 3,
+    "runs_per_question_per_version": 9,
+    "call": "messages.create(model, max_tokens=1024, tools=version tools, messages=[one user message]); no system prompt. The model's first response is scored.",
+    "key": "BASELINE_TEST_ANTHROPIC_KEY from ~/.config/baseline/anthropic_tests.env, read by run_routing.load_key(); never printed.",
+    "scored_measure": "The first tool called in the response (first tool_use block). A response with no tool call scores as 'none'.",
+    "order": [
+      "1. Snow test under D (live): python run_addendum.py ../snow_routing_test_2026-11-12.json .. D ../results_snow_D.jsonl",
+      "2. Snow test under E (new): the same command with E and results_snow_E.jsonl",
+      "3. The original trigger test under E: python run_addendum.py ../trigger_questions_2026-11-03.json .. E ../results_trigger_E.jsonl. Its 29 questions are copied verbatim from ~/Projects/baseline docs/hoodoo_trigger_test_2026-11-03.json. It is scored by score_trigger_E.py, which passes the E rows unchanged to score_hoodoo.py and score_addendum2.py in the version C slot, the same way score_D.py did for D.",
+      "Scoring: score_snow.py (snow test), score_trigger_E.py (trigger test)."
+    ]
+  },
+  "cost": {
+    "cap_usd": 15.0,
+    "prices_per_million_tokens": "Opus 5.5 $4 in / $20 out, Sonnet 5.5 $2 / $10, Haiku 5.5 $0.10 / $0.50 (the same list prices as the 2026-11-03 STATUS)",
+    "estimate": "From the 2026-11-03 run's recorded usage, the cost is $0.153 per question of 9 runs, at an average of 5,745 input and about 530 output tokens per call. E's descriptions are 637 characters longer, about 3% more input. This test has 20 questions x 2 versions plus 29 trigger questions, so 69 question-sets and 621 calls, for about $10.7. The worst case, with every reply at 1,024 output tokens, is $0.201 per question-set, or about $13.9.",
+    "stop_rule": "Cost is totalled from recorded usage after each stage. Before starting a stage, if the spend so far plus that stage's worst case would pass $15, stop and report to the owner instead of running it."
+  },
+  "pass_criteria": {
+    "snow": "For every snow question (group 'snow'), under version E, hoodoo__get_climate_context is the first tool called in 9 of 9 runs.",
+    "control": "Each control question (group 'control') is checked against its own live result. Let m be the first tool most often called under D, and n_D its count out of 9. The question passes if, under E, m is also the first tool most often called, and its count n_E is at least n_D - 1. The one-run allowance is the same noise allowance as the earlier tests' 8-of-9 rule. The exact counts are reported, so a stricter reading (n_E >= n_D) can be applied from the table. If D's top tool is a tie, the question passes if E's top tool is one of the tied tools and its count is at least the tie count minus 1.",
+    "trigger_rerun": "The original trigger test passes under E by the criteria in ~/Projects/baseline docs/hoodoo_trigger_test_2026-11-03.json (the C criteria, applied to E): trigger questions have a Hoodoo tool first in at least 8 of 9 runs; misfire questions call any Hoodoo tool in at most 1 of 9; forecast questions call get_weather_forecast first in at least 8 of 9; everyday 'who do' questions call a Hoodoo tool first in at most 1 of 9; dictation questions are reported only.",
+    "overall": "The fix passes only if all three hold: every snow question, every control question, and the trigger rerun. If API errors leave a question with fewer than 9 completed runs under a version, the test is incomplete, not passed.",
+    "expected_under_D": "Not a pass condition. The live run should show the problem: some snow questions going to a tool other than get_climate_context (S01 is the owner's question). If D sends every snow question to get_climate_context 9 of 9, that is reported as a finding: the test did not reproduce the problem."
+  },
+  "also_reported": "For each question and version, the first-tool counts by tool and by model, and the arguments of any call to a Hoodoo tool other than get_climate_context on a snow question. Where the reply text says Hoodoo can't measure or doesn't have snow, that is also counted (a case-insensitive scan of the text for 'snow' near a negation). This count is reported only, not scored.",
+  "notes": [
+    "The distractor get_weather_forecast tool is kept, so the tool set matches the earlier trigger tests. It offers precipitation for the next 7 days. Snow questions about past or to-date snow should not go to it. S11 is a snow forecast question, which tests the compare_to_normal edit.",
+    "C07 is a snow question about two places. By its description it belongs to compare_locations, so it is a control, not a snow question.",
+    "predicted_tool on control questions is the tester's guess, made before the run. It is not the criterion; D's result is."
+  ],
+  "questions": [
+    {"id": "S01", "group": "snow", "question": "How much snow has Denver had so far this season?", "note": "the owner's question, verbatim"},
+    {"id": "S02", "group": "snow", "question": "How much snow has fallen in Sapporo so far this winter?"},
+    {"id": "S03", "group": "snow", "question": "Is Montreal snowier than usual so far this winter?"},
+    {"id": "S04", "group": "snow", "question": "What's Calgary's snowfall total for the season to date?"},
+    {"id": "S05", "group": "snow", "question": "How snowy was last winter in Queenstown, New Zealand?", "note": "Southern Hemisphere"},
+    {"id": "S06", "group": "snow", "question": "Did Thredbo get a good snow season this year?", "note": "Southern Hemisphere (Australia)"},
+    {"id": "S07", "group": "snow", "question": "Has Innsbruck had much snow yet this season?", "note": "Europe"},
+    {"id": "S08", "group": "snow", "question": "How did last winter's snowfall in Oslo compare with normal?", "note": "Europe"},
+    {"id": "S09", "group": "snow", "question": "Was the 2024-25 winter a snowy one in Chamonix?", "note": "Europe, a named past winter"},
+    {"id": "S10", "group": "snow", "question": "How much snow has fallen at 43.06, 141.35 since the snow season started?", "note": "coordinates; get_context_for_coordinates says past periods at a point go to get_climate_context"},
+    {"id": "S11", "group": "snow", "question": "Is Calgary going to get more snow than normal over the next week?", "note": "a snow forecast measured against normal; tests the compare_to_normal edit"},
+    {"id": "C01", "group": "control", "question": "How much rain has Fresno had this water year compared to normal?", "predicted_tool": "hoodoo__get_water_year_status"},
+    {"id": "C02", "group": "control", "question": "Is Casper, Wyoming in drought this water year?", "predicted_tool": "hoodoo__get_water_year_status"},
+    {"id": "C03", "group": "control", "question": "Will Denver be warmer than normal over the next 10 days?", "predicted_tool": "hoodoo__compare_to_normal"},
+    {"id": "C04", "group": "control", "question": "What's the 10-day forecast for Madrid?", "predicted_tool": "get_weather_forecast"},
+    {"id": "C05", "group": "control", "question": "Will the coming season be warmer than normal in Nairobi?", "predicted_tool": "hoodoo__get_seasonal_outlook"},
+    {"id": "C06", "group": "control", "question": "Compare this water year's rainfall in Fresno and Sacramento.", "predicted_tool": "hoodoo__compare_locations"},
+    {"id": "C07", "group": "control", "question": "Which has had more snow this ski season, Vail or Park City?", "predicted_tool": "hoodoo__compare_locations"},
+    {"id": "C08", "group": "control", "question": "What do the next 10 days look like at 41.14, -104.82 compared with normal?", "predicted_tool": "hoodoo__get_context_for_coordinates"},
+    {"id": "C09", "group": "control", "question": "How did August 2026 rank for heat in Phoenix?", "predicted_tool": "hoodoo__get_climate_context"}
+  ]
+}

@@ -1,0 +1,201 @@
+{
+  "written": "2026-11-03",
+  "purpose": "Owner decision D2 (2026-11-03): the connector is now named \"Hoodoo Weather\". Rerun the Hoodoo trigger test with the final tool descriptions, the same way as branch hoodoo-trigger-test-2026-10-20: pre-registered, not pushed, same pass criteria including the 'who do' misfire set. Written and committed before any API call.",
+  "release_rule": "The release ships only if every question passes under D by the same criteria C was scored by. Dictation questions (D01-D04) have no pass mark in the original criteria (report only), so they are reported, not scored. If API errors leave any question with fewer than 9 completed runs, the test is incomplete, not passed.",
+  "versions": {
+    "D": "Version C (docs/hoodoo_trigger_test_2026-10-20/version_C.json) with every \"Hoodoo Climate\" in the tool descriptions replaced by \"Hoodoo Weather\" (5 occurrences), nothing else changed. The trigger line, \"Hoodoo's tools\", \"Hoodoo report\" and bare \"Hoodoo\" are unchanged. Server label 'hoodoo' (tool names hoodoo__<tool>), plus the get_weather_forecast distractor tool exactly as in versions A-C. File: docs/hoodoo_trigger_test_2026-11-03/version_D.json."
+  },
+  "method": {
+    "models": [
+      "claude-sonnet-5-5",
+      "claude-opus-5-5",
+      "claude-haiku-5-5"
+    ],
+    "runs_per_model": 3,
+    "runs_per_question_per_version": 9,
+    "system_prompt": "none",
+    "turns": "one user message; the model's first response is scored",
+    "other_tools": "the generic get_weather_forecast tool, exactly as in the 2026-10-20 routing and trigger tests",
+    "server_label": "hoodoo__<tool>, as in versions B and C; the weather tool keeps its bare name.",
+    "scoring": "docs/hoodoo_trigger_test_2026-10-20/harness/score_hoodoo.py for the original and addendum questions and score_addendum2.py for W01-W06, unchanged, with the version D rows given to them in the version C slot so the C criteria are applied to D.",
+    "versions_run": "D only",
+    "call": "messages.create(model, max_tokens=1024, tools=version D tools, messages=[one user message]); no system prompt.",
+    "harness": "docs/hoodoo_trigger_test_2026-10-20/harness/run_addendum.py, unchanged (resumable, saves after every call, retries only connection errors and 5xx, stops the whole run on any 4xx). anthropic python package 0.109.2, the version pinned in requirements.txt."
+  },
+  "pass_criteria": {
+    "trigger": "Under version D, a Hoodoo tool is the first tool called in at least 8 of 9 runs per question. Applies to T01-T08 and to the addendum questions T01b and T09.",
+    "misfire": "Under version D, any Hoodoo tool is called (first or later in the same response) in no more than 1 of 9 runs per question.",
+    "forecast": "Under version D, get_weather_forecast is the first tool called in at least 8 of 9 runs per question, the same as version A.",
+    "dictation": "Report only, no pass mark. These show how fragile the trigger is when spoken.",
+    "everyday_misfire": "Under version D, a Hoodoo tool is the first tool called in no more than 1 of 9 runs per question.",
+    "also_reported": "For each question and version, the number of runs that called any Hoodoo tool at any point, first or later. For any version D run that called a Hoodoo tool, the exact tool call is reported."
+  },
+  "pass_criteria_verbatim_from_2026_10_20": {
+    "original": {
+      "trigger": "Under version C, a Hoodoo tool is the first tool called in at least 8 of 9 runs per question.",
+      "misfire": "Under version C, any Hoodoo tool is called (first or later in the same response) in no more than 1 of 9 runs per question.",
+      "forecast": "Under version C, get_weather_forecast is the first tool called in at least 8 of 9 runs per question, the same as version A.",
+      "dictation": "Report only, no pass mark. These show how fragile the trigger is when spoken."
+    },
+    "addendum": {
+      "trigger": "Same as the other trigger questions: under version C, a Hoodoo tool is the first tool called in at least 8 of 9 runs per question."
+    },
+    "addendum2": {
+      "everyday_misfire": "Under version C, a Hoodoo tool is the first tool called in no more than 1 of 9 runs per question.",
+      "also_reported": "For each question and version, the number of runs that called any Hoodoo tool at any point, first or later. For any version C run that called a Hoodoo tool, the exact tool call is reported."
+    }
+  },
+  "sources": [
+    "docs/hoodoo_trigger_test_2026-10-20.json",
+    "docs/hoodoo_trigger_test_2026-10-20_addendum.json",
+    "docs/hoodoo_trigger_test_2026-10-20_addendum2.json"
+  ],
+  "comparison": "Per-question rates are compared with version C from docs/hoodoo_trigger_test_2026-10-20/results_summary_final.json and results_summary_addendum2.json.",
+  "questions": [
+    {
+      "id": "T01",
+      "group": "trigger",
+      "question": "hoodoo Casper wy"
+    },
+    {
+      "id": "T02",
+      "group": "trigger",
+      "question": "hoodoo Nairobi"
+    },
+    {
+      "id": "T03",
+      "group": "trigger",
+      "question": "hoodoo Tokyo this winter"
+    },
+    {
+      "id": "T04",
+      "group": "trigger",
+      "question": "hoodoo snow Calgary"
+    },
+    {
+      "id": "T05",
+      "group": "trigger",
+      "question": "hoodoo last summer in Melbourne"
+    },
+    {
+      "id": "T06",
+      "group": "trigger",
+      "question": "Hoodoo: is it dry in Cape Town?"
+    },
+    {
+      "id": "T07",
+      "group": "trigger",
+      "question": "can you hoodoo Mumbai for me"
+    },
+    {
+      "id": "T08",
+      "group": "trigger",
+      "question": "hoodoo Seville"
+    },
+    {
+      "id": "D01",
+      "group": "dictation",
+      "question": "who do Casper Wyoming"
+    },
+    {
+      "id": "D02",
+      "group": "dictation",
+      "question": "hudu Nairobi"
+    },
+    {
+      "id": "D03",
+      "group": "dictation",
+      "question": "Hoodoo. Tokyo."
+    },
+    {
+      "id": "D04",
+      "group": "dictation",
+      "question": "who do it for Denver"
+    },
+    {
+      "id": "M01",
+      "group": "misfire",
+      "question": "What is a hoodoo?"
+    },
+    {
+      "id": "M02",
+      "group": "misfire",
+      "question": "Where can I see hoodoos in Turkey?"
+    },
+    {
+      "id": "M03",
+      "group": "misfire",
+      "question": "Are there hoodoos near Casper, Wyoming?"
+    },
+    {
+      "id": "M04",
+      "group": "misfire",
+      "question": "Tell me about hoodoo folk magic."
+    },
+    {
+      "id": "M05",
+      "group": "misfire",
+      "question": "How were the hoodoos in Bryce Canyon formed?"
+    },
+    {
+      "id": "F01",
+      "group": "forecast",
+      "question": "Will it rain in Nairobi tomorrow?"
+    },
+    {
+      "id": "F04",
+      "group": "forecast",
+      "question": "What's the weather in Denver tomorrow?"
+    },
+    {
+      "id": "F05",
+      "group": "forecast",
+      "question": "Will it snow in Calgary this week?"
+    },
+    {
+      "id": "F08",
+      "group": "forecast",
+      "question": "What's the Mumbai forecast for the next three days?"
+    },
+    {
+      "id": "T01b",
+      "group": "trigger",
+      "question": "hoodoo Casper Wyoming"
+    },
+    {
+      "id": "T09",
+      "group": "trigger",
+      "question": "hoodoo Casper"
+    },
+    {
+      "id": "W01",
+      "group": "everyday_misfire",
+      "question": "Who do I call about hail damage in Denver?"
+    },
+    {
+      "id": "W02",
+      "group": "everyday_misfire",
+      "question": "Who do farmers in Kenya contact for drought assistance?"
+    },
+    {
+      "id": "W03",
+      "group": "everyday_misfire",
+      "question": "Who do I talk to about frost damage to my orchard in Casper?"
+    },
+    {
+      "id": "W04",
+      "group": "everyday_misfire",
+      "question": "Who do you think makes the best rain gauge?"
+    },
+    {
+      "id": "W05",
+      "group": "everyday_misfire",
+      "question": "Who do people in Tokyo turn to for typhoon warnings?"
+    },
+    {
+      "id": "W06",
+      "group": "everyday_misfire",
+      "question": "who do I ask about the weather station in Nairobi"
+    }
+  ]
+}
