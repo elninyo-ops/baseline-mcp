@@ -737,7 +737,10 @@ Compare a region or a set of places on rainfall, temperature or snowfall
     its rank against the others. Use it whenever a question is about more than
     one place, for example whether an event was local or regional, or which
     sites fared worst, instead of asking about each place separately: the
-    ranking is computed by Hoodoo, not by your own arithmetic. A county or
+    ranking is computed by Hoodoo, not by your own arithmetic. A question
+    about one place, snow included ("How much snow has Denver had so far this
+    season?"), goes to get_climate_context: don't add other places to make it
+    a comparison. A county or
     other area isn't a point: give a town in it, or coordinates.
 
     Provide EITHER `locations` (a list of 2-10 place names and/or "lat,lon"
