@@ -11,7 +11,7 @@
     - it answers snow questions (snow so far this season, the snow season to date, how snowy a past winter or ski season was);
     - it is the Hoodoo tool for any weather question asked in plain words;
     - "snowy" is added to "how wet, dry, hot or cold";
-    - two new forms, "How much snow has LOCATION had so far this season?" and "How snowy was last winter in LOCATION?". The API's own tests pin both as the snow season (`tests/test_10f1_amendment2.py`, `test_10f1_amendment1.py` on the API's `release/2026-11-rename`).
+    - two new forms, "How much snow has LOCATION had so far this season?" and "How snowy was last winter in LOCATION?". The API's own tests pin both, on the API's `release/2026-11-rename`: the first is read as the snow season to date (`tests/test_10f1_amendment2.py`), and the second as last winter, the season (`tests/test_10f1_amendment1.py`).
   - `get_water_year_status`: it covers precipitation (rain, with any snow counted as melted water) and temperature only, not snowfall. Snow questions go to `get_climate_context`.
   - `compare_to_normal`: snow is not a variable here, so a snow question goes to `get_climate_context`.
   - `compare_locations`: a question about one place, snow included, goes to `get_climate_context`, and the model shouldn't add places to make a comparison.
